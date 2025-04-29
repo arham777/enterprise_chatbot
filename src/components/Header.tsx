@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Menu } from 'lucide-react';
+import { Menu, LogOut, User } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   Sheet,
@@ -10,9 +10,20 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const Header = () => {
   const isMobile = useIsMobile();
+  const { isAuthenticated, logout } = useAuth();
+  
+  // Debug log for Header render
+  console.log('HEADER RENDER - Auth state:', isAuthenticated);
 
   const navItems = [
     { name: 'Enterprise', href: '/#enterprise' },
@@ -44,6 +55,22 @@ const Header = () => {
     </nav>
   );
 
+  const UserMenu = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="rounded-full bg-primary/10">
+          <User className="h-5 w-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={logout} className="cursor-pointer">
+          <LogOut className="mr-2 h-4 w-4" />
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   const MobileNav = () => (
     <Sheet>
       <SheetTrigger asChild>
@@ -65,11 +92,20 @@ const Header = () => {
               {item.name}
             </a>
           ))}
-          <Link to="/auth">
-            <Button className="mt-4 bg-cybergen-primary hover:bg-cybergen-secondary w-full">
-              Sign In
+          {isAuthenticated ? (
+            <Button 
+              onClick={logout}
+              className="mt-4 bg-cybergen-primary hover:bg-cybergen-secondary w-full"
+            >
+              Sign Out
             </Button>
-          </Link>
+          ) : (
+            <Link to="/auth">
+              <Button className="mt-4 bg-cybergen-primary hover:bg-cybergen-secondary w-full">
+                Sign In
+              </Button>
+            </Link>
+          )}
         </div>
       </SheetContent>
     </Sheet>
@@ -82,11 +118,15 @@ const Header = () => {
         <NavItems />
         <div className="flex items-center gap-3">
           {!isMobile && (
-            <Link to="/auth">
-              <Button className="bg-cybergen-primary hover:bg-cybergen-secondary">
-                Sign In
-              </Button>
-            </Link>
+            isAuthenticated ? (
+              <UserMenu />
+            ) : (
+              <Link to="/auth">
+                <Button className="bg-cybergen-primary hover:bg-cybergen-secondary">
+                  Sign In
+                </Button>
+              </Link>
+            )
           )}
           <MobileNav />
         </div>

@@ -56,7 +56,7 @@ A modern, responsive chatbot application built with React, TypeScript, and conne
 
 3. Create a `.env` file in the root directory:
    ```
-   VITE_API_URL=http://10.229.220.15:8080
+   VITE_API_URL=http://103.18.20.205:8070
    ```
 
 4. Start the development server:
@@ -133,7 +133,7 @@ server {
 
     # Proxy API requests to the existing backend
     location /api {
-        proxy_pass http://10.229.220.15:8080;
+        proxy_pass http://103.18.20.205:8070;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -161,15 +161,29 @@ server {
 
 2. Deploy the `dist` folder to your web server (Nginx, Apache, etc.)
 
-3. Configure your web server to serve the static files and proxy API requests to the existing backend at `http://10.229.220.15:8080`
+3. Configure your web server to serve the static files and proxy API requests to the existing backend at `http://103.18.20.205:8070`
 
 ## Environment Variables
 
 ### Frontend
-- `VITE_API_URL`: Backend API URL (should be set to `http://10.229.220.15:8080` or your API domain)
+- `VITE_API_URL`: Backend API URL (should be set to `http://103.18.20.205:8070` or your API domain)
 
 ### Backend
 - `PANDAS_AI_API_KEY`: Your PandasAI API key (get it from https://app.pandabi.ai)
+
+## Authentication
+
+The application uses token-based authentication with the following endpoints:
+
+- `POST /signin`: For user login
+  - Request body: `{ "email": "user@example.com", "password": "password123" }`
+  - Response: `{ "token": "jwt_token_here" }`
+
+- `POST /signup`: For user registration
+  - Request body: `{ "name": "User Name", "email": "user@example.com", "password": "password123" }`
+  - Response: Success message
+
+The authentication token is stored in the browser's localStorage and included in requests that require authentication.
 
 ## Using the Chatbot
 

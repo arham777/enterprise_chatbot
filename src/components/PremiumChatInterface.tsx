@@ -26,6 +26,10 @@ import {
   Upload,
   Database
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+
+// Get API URL from environment variables
+const API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
 
 const WelcomeMessage = () => (
   <div className="flex flex-col items-center justify-center text-center p-4 md:p-8 max-w-xl mx-auto">
@@ -107,6 +111,7 @@ const PremiumChatInterface = () => {
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageContainerRef = useRef<HTMLDivElement>(null);
+  const { userEmail } = useAuth();
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -115,7 +120,7 @@ const PremiumChatInterface = () => {
     }
   }, [messages, isLoading]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if ((input.trim() || files.length > 0) && !isLoading) {
       setShow(false);
       
@@ -129,21 +134,84 @@ const PremiumChatInterface = () => {
       setMessages(prev => [...prev, userMessage]);
       setIsLoading(true);
       
-      // Simulate AI response after a delay
-      setTimeout(() => {
-        const botResponse = {
+      // Check if we have email
+      if (!userEmail) {
+        // Handle missing email
+        setMessages(prev => [...prev, {
           isBot: true,
-          content: files.length > 0 
-            ? "I've analyzed the files you uploaded. What would you like to know about them?"
-            : "Thanks for your question. As an advanced AI assistant, I'm here to provide accurate and helpful information. Is there anything specific you'd like me to elaborate on?",
+          content: "Error: User email information is missing. Please sign out and sign in again.",
           timestamp: new Date().toLocaleTimeString()
-        };
-        
-        setMessages(prev => [...prev, botResponse]);
+        }]);
         setIsLoading(false);
-        setInput("");
-        setFiles([]);
-      }, 2000);
+        return;
+      }
+      
+      if (files.length > 0) {
+        // Handle files upload
+        // For now, just simulate
+        setTimeout(() => {
+          const botResponse = {
+            isBot: true,
+            content: "I've analyzed the files you uploaded. What would you like to know about them?",
+            timestamp: new Date().toLocaleTimeString()
+          };
+          
+          setMessages(prev => [...prev, botResponse]);
+          setIsLoading(false);
+          setInput("");
+          setFiles([]);
+        }, 2000);
+      } else {
+        // Send to actual API
+        try {
+          // Create request body
+          const requestBody = JSON.stringify({
+            query: input.trim(),
+            kb_flag: false
+          });
+          
+          // Make API call with email parameter
+          const apiEndpoint = `${API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`;
+          console.log(`Sending request to: ${apiEndpoint}`);
+          
+          const response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Origin': window.location.origin,
+            },
+            body: requestBody,
+            mode: 'cors'
+          });
+          
+          if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+          }
+          
+          // Parse response
+          const data = await response.json();
+          
+          // Add bot response
+          setMessages(prev => [...prev, {
+            isBot: true,
+            content: data.response || "Sorry, I couldn't generate a response.",
+            timestamp: new Date().toLocaleTimeString()
+          }]);
+        } catch (error) {
+          console.error('Error fetching response:', error);
+          
+          // Add error message
+          setMessages(prev => [...prev, {
+            isBot: true,
+            content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            timestamp: new Date().toLocaleTimeString()
+          }]);
+        } finally {
+          setIsLoading(false);
+          setInput("");
+        }
+      }
     }
   };
 

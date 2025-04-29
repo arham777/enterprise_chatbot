@@ -8,7 +8,7 @@ services:
     ports:
       - "80:80"
     environment:
-      - VITE_API_URL=http://backend:8080
+      - VITE_API_URL=http://103.18.20.205:8070
     depends_on:
       - backend
 
@@ -20,3 +20,5 @@ services:
       - "8080:8080"
     environment:
       - ENVIRONMENT=production 
+      - JWT_SECRET=your_jwt_secret_key_here # Change this in production
+      - AUTH_TOKEN_EXPIRY=86400 # 24 hours in seconds 
