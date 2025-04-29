@@ -4,9 +4,10 @@ import { FileText, X, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { useChatAssistant } from './HeroSection';
+import { useAuth } from '@/context/AuthContext';
 
-// API URL - should match the one in ChatAssistantButton
-const API_URL = 'http://103.18.20.205:8070';
+// Get API URL from environment variables
+const API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
 
 const DocumentSidebar = () => {
   const [documents, setDocuments] = useState<string[]>([]);
@@ -14,13 +15,24 @@ const DocumentSidebar = () => {
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const { setIsOpen: setChatOpen } = useChatAssistant();
+  const { userEmail } = useAuth();
 
   const fetchDocuments = async () => {
     setIsLoading(true);
     setError(null);
     
+    // Check if user email is available
+    if (!userEmail) {
+      setError('User email information is missing. Please sign out and sign in again.');
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      const response = await fetch(`${API_URL}/get-all-documents/`, {
+      // Add email parameter to the endpoint
+      const endpoint = `${API_URL}/get-all-documents/?email=${encodeURIComponent(userEmail)}`;
+      
+      const response = await fetch(endpoint, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -30,14 +42,18 @@ const DocumentSidebar = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch documents: ${response.status}`);
+        // Just set documents to empty array instead of throwing an error
+        setDocuments([]);
+        setIsLoading(false);
+        return;
       }
 
       const data = await response.json();
       setDocuments(data.documents || []);
     } catch (err) {
       console.error('Error fetching documents:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch documents');
+      // Don't set error message, just set documents to empty array
+      setDocuments([]);
     } finally {
       setIsLoading(false);
     }
@@ -53,9 +69,18 @@ const DocumentSidebar = () => {
     if (!confirm(`Are you sure you want to delete "${fileName}"?`)) {
       return;
     }
+    
+    // Check if user email is available
+    if (!userEmail) {
+      alert('User email information is missing. Please sign out and sign in again.');
+      return;
+    }
 
     try {
-      const response = await fetch(`${API_URL}/delete-file/?file_name=${encodeURIComponent(fileName)}`, {
+      // Add email parameter to the endpoint
+      const endpoint = `${API_URL}/delete-file/?file_name=${encodeURIComponent(fileName)}&email=${encodeURIComponent(userEmail)}`;
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -148,22 +173,15 @@ const DocumentSidebar = () => {
                   <RefreshCw className="h-6 w-6 text-blue-500 animate-spin" />
                 </div>
               ) : error ? (
-                <div className="text-red-500 p-3 rounded-md bg-red-50">
-                  <p>Error loading documents: {error}</p>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={fetchDocuments}
-                    className="mt-2 w-full"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Retry
-                  </Button>
+                <div className="text-center text-gray-500 py-8">
+                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p>No document uploaded yet</p>
+                  <p className="text-sm mt-2">Upload documents using the chat assistant</p>
                 </div>
               ) : documents.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                  <p>No documents found</p>
+                  <p>No document uploaded yet</p>
                   <p className="text-sm mt-2">Upload documents using the chat assistant</p>
                 </div>
               ) : (

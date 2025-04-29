@@ -37,7 +37,7 @@ const FormattedMarkdown = ({ children }: { children: string }) => {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw]}
         components={{
-          // @ts-ignore - The types for react-markdown are not correctly defining the inline prop
+          // @ts-expect-error - The types for react-markdown are not correctly defining the inline prop
           code({ node, inline, className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
             
@@ -316,10 +316,10 @@ const ChatAssistantButton = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { isAuthenticated, redirectToLogin } = useAuth();
+  const { isAuthenticated, redirectToLogin, userEmail } = useAuth();
 
   // Define API base URL and CORS proxy functionality
-  const ORIGINAL_API_URL = 'http://103.18.20.205:8070';
+  const ORIGINAL_API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
   
   // Helper function to create a CORS proxy URL if needed
   const createProxiedUrl = (url: string): string => {
@@ -466,8 +466,20 @@ const ChatAssistantButton = () => {
 
   // Function to delete all files from the backend
   const deleteAllFiles = async () => {
+    // Check if user email is available
+    if (!userEmail) {
+      setChatHistory(prev => [...prev, { 
+        type: 'bot', 
+        text: 'Error: User email information is missing. Please sign out and sign in again.'
+      }]);
+      return;
+    }
+
     try {
-      const response = await fetch(`${ORIGINAL_API_URL}/delete-all-files/`, {
+      // Add email parameter to the endpoint
+      const deleteEndpoint = `${ORIGINAL_API_URL}/delete-all-files/?email=${encodeURIComponent(userEmail)}`;
+      
+      const response = await fetch(deleteEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -511,49 +523,59 @@ const ChatAssistantButton = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check if file is PDF or CSV
-    const isPDF = file.name.endsWith('.pdf');
-    const isCSV = file.name.endsWith('.csv');
-    
-    if (!isPDF && !isCSV) {
+    // Check if user is authenticated and email is available
+    if (!userEmail) {
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: 'Only PDF and CSV files are supported for analysis.'
+        text: 'Error: User email information is missing. Please sign out and sign in again.'
+      }]);
+      return;
+    }
+
+    // Check if file is PDF - only allow PDF files as endpoint can only handle PDFs
+    const isPDF = file.name.toLowerCase().endsWith('.pdf');
+    
+    if (!isPDF) {
+      setChatHistory(prev => [...prev, { 
+        type: 'bot', 
+        text: 'Only PDF files are supported for document upload. Please upload a PDF file.'
       }]);
       return;
     }
 
     // Validate file size before upload - prevent server errors for large files
-    const maxSizeMB = isPDF ? 5 : 10; // 5MB for PDFs, 10MB for CSVs
+    const maxSizeMB = 5; // 5MB for PDFs
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     
     if (file.size > maxSizeBytes) {
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: `File too large. Maximum size for ${isPDF ? 'PDF' : 'CSV'} files is ${maxSizeMB}MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`
+        text: `File too large. Maximum PDF size is ${maxSizeMB}MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`
       }]);
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
     // Additional PDF validation - check PDF format
-    if (isPDF) {
-      // Simple PDF header check
-      const firstBytes = await readFileHeader(file, 5);
-      const isPDFFormat = firstBytes === '%PDF-';
-      
-      if (!isPDFFormat) {
-        setChatHistory(prev => [...prev, { 
-          type: 'bot', 
-          text: `The file ${file.name} doesn't appear to be a valid PDF document. Make sure your file is not corrupted.`
-        }]);
-        return;
-      }
+    // Simple PDF header check
+    const firstBytes = await readFileHeader(file, 5);
+    const isPDFFormat = firstBytes === '%PDF-';
+    
+    if (!isPDFFormat) {
+      setChatHistory(prev => [...prev, { 
+        type: 'bot', 
+        text: `The file ${file.name} doesn't appear to be a valid PDF document. Make sure your file is not corrupted.`
+      }]);
+      return;
     }
 
     // Add file to chat history
     setChatHistory(prev => [...prev, { 
       type: 'user', 
-      text: `I'd like to analyze this ${isPDF ? 'PDF' : 'CSV'} file: ${file.name}`
+      text: `I'd like to analyze this PDF document: ${file.name}`
     }]);
     
     setIsLoading(true);
@@ -561,19 +583,16 @@ const ChatAssistantButton = () => {
     // Create FormData
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('email', userEmail);
 
-    // Try direct API first, then fallback to proxy
-    let useDirectApi = true;
-    let attempts = 0;
-    const maxAttempts = 2; // Try direct and then proxy
     let response = null;
     let errorMessage = '';
 
     try {
-      // Direct API approach since proxies are failing
-      const uploadEndpoint = isPDF ? `${ORIGINAL_API_URL}/upload-pdf/` : `${ORIGINAL_API_URL}/upload-csv/`;
+      // Direct API approach
+      const uploadEndpoint = `${ORIGINAL_API_URL}/upload-pdf/`;
       
-      console.log(`Uploading file directly to: ${uploadEndpoint}`);
+      console.log(`Uploading PDF file to: ${uploadEndpoint}`);
       
       // Try to upload file with improved headers
       response = await fetch(uploadEndpoint, {
@@ -591,18 +610,38 @@ const ChatAssistantButton = () => {
       if (!response.ok) {
         // Special handling for 500 Internal Server Error
         if (response.status === 500) {
-          if (isPDF) {
-            throw new Error("Server error: The PDF document might be too complex, password-protected, or in an unsupported format.");
-          } else {
-            throw new Error(`API error: ${response.status} - Server failed to process the file.`);
-          }
+          throw new Error("Server error: The PDF document might be too complex, password-protected, or in an unsupported format.");
+        } else if (response.status === 413) {
+          throw new Error("File too large: The PDF document exceeds the server's size limit. Please use a smaller file (under 5MB).");
         } else {
           throw new Error(`API error: ${response.status}`);
         }
       }
     } catch (error) {
       console.error('Error uploading file:', error);
+      
+      // Check if it's a network error that might be related to file size
       errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Detect if it's likely a file size issue based on the error
+      const isLikelyFileSizeIssue = 
+        errorMessage.includes('413') || 
+        errorMessage.includes('Request Entity Too Large') ||
+        errorMessage.includes('Failed to fetch');
+      
+      if (isLikelyFileSizeIssue) {
+        setChatHistory(prev => [...prev, { 
+          type: 'bot', 
+          text: `## File Too Large\n\nThe file you're trying to upload exceeds the maximum size limit (5MB).\n\nPlease compress your PDF or use a smaller file.`
+        }]);
+        setIsLoading(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';  // Reset the file input
+        }
+        return;
+      }
+      
+      // For other errors, continue with generic error handling
       response = null;
     }
 
@@ -640,74 +679,32 @@ const ChatAssistantButton = () => {
           data = text;
         }
         
-        // Handle the response differently based on file type
-        if (isPDF) {
-          // For PDF files
-          let responseText;
-          
-          // Check if the response is an object with a message property (from FastAPI)
-          if (data && typeof data === 'object' && data.message) {
-            responseText = `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.\n\n**Server response:** ${data.message}\n\n**Note:** Knowledge Base has been automatically activated to answer questions about this document.`;
-          } else {
-            responseText = typeof data === 'string' 
-              ? data 
-              : `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.\n\n**Note:** Knowledge Base has been automatically activated to answer questions about this document.`;
-          }
-          
-          // Automatically activate knowledge base when PDF is uploaded
-          setUseKnowledgeBase(true);
-          
-          setChatHistory(prev => [...prev, { 
-            type: 'bot', 
-            text: responseText,
-            fileInfo: {
-              filename: file.name,
-              fileType: 'PDF'
-            }
-          }]);
-          
-          // No file ID concept for PDFs in this implementation
-          setActiveFileId(null);
+        // For PDF files
+        let responseText;
+        
+        // Check if the response is an object with a message property (from FastAPI)
+        if (data && typeof data === 'object' && data.message) {
+          responseText = `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.\n\n**Server response:** ${data.message}\n\n**Note:** Knowledge Base has been automatically activated to answer questions about this document.`;
         } else {
-          // For CSV files (keeping existing functionality)
-          setActiveFileId(data.file_id);
-          
-          // Format columns to be more readable
-          let columnsList = '';
-          if (data.columns && data.columns.length > 0) {
-            columnsList = '\n\n**Columns:**\n\n';
-            columnsList += '| # | Column Name |\n';
-            columnsList += '|---|-------------|\n';
-            data.columns.forEach((col: string, index: number) => {
-              columnsList += `| ${index + 1} | ${col} |\n`;
-            });
-          }
-          
-          // Format preview data if available
-          let previewTable = '';
-          if (data.preview && data.preview.length > 0) {
-            previewTable = '\n\n**Data Preview:**\n\n';
-            previewTable += '| ' + data.columns.join(' | ') + ' |\n';
-            previewTable += '| ' + data.columns.map(() => '---').join(' | ') + ' |\n';
-            
-            data.preview.forEach((row: any) => {
-              previewTable += '| ' + data.columns.map((col: string) => row[col] || '').join(' | ') + ' |\n';
-            });
-          }
-          
-          // Add response to chat history
-          setChatHistory(prev => [...prev, { 
-            type: 'bot', 
-            text: `## CSV File Loaded Successfully\n\nI've loaded your CSV file **${data.filename}** with ${data.rows} rows and ${data.columns.length} columns. You can now ask questions about this data.${columnsList}${previewTable}\n\nTry asking questions like:\n- What's the distribution of values in column X?\n- Show me a chart of column Y vs column Z\n- What are the top 5 values in column A?`,
-            fileId: data.file_id,
-            fileInfo: {
-              filename: data.filename,
-              fileType: 'CSV',
-              columns: data.columns,
-              rows: data.rows
-            }
-          }]);
+          responseText = typeof data === 'string' 
+            ? data 
+            : `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.\n\n**Note:** Knowledge Base has been automatically activated to answer questions about this document.`;
         }
+        
+        // Automatically activate knowledge base when PDF is uploaded
+        setUseKnowledgeBase(true);
+        
+        setChatHistory(prev => [...prev, { 
+          type: 'bot', 
+          text: responseText,
+          fileInfo: {
+            filename: file.name,
+            fileType: 'PDF'
+          }
+        }]);
+        
+        // No file ID concept for PDFs in this implementation
+        setActiveFileId(null);
       } catch (processError) {
         console.error('Error processing response:', processError);
         setChatHistory(prev => [...prev, { 
@@ -719,7 +716,7 @@ const ChatAssistantButton = () => {
       // All attempts failed - show error message
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: `## Error\n\nI encountered an error while processing your file. Please try again with a different file.\n\n**Details:** ${errorMessage || 'Failed to upload file after multiple attempts. This may be due to CORS restrictions or network issues.'}`
+        text: `## Error\n\nI encountered an error while processing your file. ${errorMessage.includes('413') ? 'The file is too large for upload (maximum 5MB).' : 'Please try again with a different file.'}\n\n${!errorMessage.includes('413') ? `**Technical details:** ${errorMessage || 'Failed to upload file. This may be due to network issues or file formatting.'}` : ''}`
       }]);
     }
     
@@ -772,11 +769,28 @@ const ChatAssistantButton = () => {
 
     // Add debug logging to show if knowledge base is being used
     console.log(`Sending query with knowledge base flag: ${useKnowledgeBase ? 'ON' : 'OFF'}`);
-    console.log('Request details:', { query: trimmedMessage, kb_flag: useKnowledgeBase });
+    console.log('Request details:', { query: trimmedMessage, kb_flag: useKnowledgeBase, email: userEmail });
+    
+    // Check if we have the user email
+    if (!userEmail) {
+      console.error("User email is not available");
+      setChatHistory(prev => [
+        ...prev.slice(0, placeholderIndex),
+        { 
+          type: 'bot', 
+          text: `## Error\n\nUser email information is missing. Please sign out and sign in again.`,
+          isStreaming: false,
+          loadingIndicator: false
+        }
+      ]);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // Try direct call first without proxy
-      const apiEndpoint = `${ORIGINAL_API_URL}/generate-response/`;
+      // Add email as query parameter
+      const apiEndpoint = `${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`;
       console.log(`Attempting direct API call to: ${apiEndpoint}`);
       
       // Use a more complete set of headers to handle CORS properly
@@ -829,7 +843,8 @@ const ChatAssistantButton = () => {
       try {
         console.log("Direct API call failed. Attempting with alternative headers...");
         
-        const fallbackResponse = await fetch(`${ORIGINAL_API_URL}/generate-response/`, {
+        // Also include email in fallback attempt
+        const fallbackResponse = await fetch(`${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -857,7 +872,7 @@ const ChatAssistantButton = () => {
           }
         ]);
 
-    setTimeout(() => {
+        setTimeout(() => {
           setChatHistory(prev => [
             ...prev.slice(0, placeholderIndex),
             {
@@ -932,7 +947,7 @@ const ChatAssistantButton = () => {
         ref={fileInputRef}
         onChange={handleFileUpload}
         className="hidden"
-        accept=".pdf,.csv"
+        accept=".pdf"
       />
     
       {/* Chat Window */}
@@ -1004,8 +1019,8 @@ const ChatAssistantButton = () => {
                    <div className={`grid w-full max-w-md gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     <WelcomeCard 
                       icon={FileText} 
-                      title="CSV Analysis" 
-                      description="Upload & analyze data." 
+                      title="PDF Documents" 
+                      description="Upload & analyze documents." 
                       onClick={triggerFileUpload}
                     />
                     
@@ -1039,19 +1054,9 @@ const ChatAssistantButton = () => {
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0}}
-                  className="mb-2 text-xs text-blue-500 flex items-center gap-1 justify-center"
+                        className="mb-2 text-xs text-blue-500 flex items-center gap-1 justify-center"
                     >
                         <Database className="h-3 w-3"/> Knowledge Base Active
-                    </motion.div>
-                )}
-              {activeFileId && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0}}
-                  className="mb-2 text-xs text-blue-500 flex items-center gap-1 justify-center"
-                >
-                  <Table className="h-3 w-3"/> CSV Analysis Mode
                     </motion.div>
                 )}
               <div className="flex items-center gap-2">
@@ -1059,7 +1064,7 @@ const ChatAssistantButton = () => {
                   variant="ghost" 
                   size="icon" 
                   className="h-8 w-8 text-muted-foreground hover:text-blue-500 flex-shrink-0" 
-                  aria-label="Upload CSV file"
+                  aria-label="Upload PDF document"
                   onClick={triggerFileUpload}
                   disabled={isLoading}
                 >
@@ -1086,7 +1091,7 @@ const ChatAssistantButton = () => {
                     value={message}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder={activeFileId ? "Ask questions about your CSV data..." : "Ask anything..."}
+                    placeholder="Ask anything..."
                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 pr-10"
                     disabled={isLoading}
                   />

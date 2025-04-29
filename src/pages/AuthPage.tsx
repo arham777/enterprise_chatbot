@@ -26,6 +26,9 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 
+// Get API URL from environment variables
+const API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
+
 const AuthPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -69,11 +72,16 @@ const AuthPage = () => {
     
     try {
       setIsSigningIn(true);
-      const response = await fetch('/signin', {
+      console.log("AUTH PAGE: Attempting to sign in with email:", signinEmail);
+      
+      const response = await fetch(`${API_URL}/signin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
         },
+        mode: 'cors',
         body: JSON.stringify({
           email: signinEmail,
           password: signinPassword
@@ -81,28 +89,51 @@ const AuthPage = () => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ message: `Server error: ${response.status}` }));
         throw new Error(errorData.message || 'Authentication failed');
       }
       
       const data = await response.json();
+      console.log("AUTH PAGE: Sign-in response received:", !!data);
+      console.log("AUTH PAGE: Token in response:", !!data.token);
       
       // Use auth context to log in
-      if (data.token) {
-        login(data.token);
+      if (data.message === "Login successful.") {
+        login(signinEmail); // Pass the email to the login function
+        console.log("AUTH PAGE: Login successful with email:", signinEmail);
+        
+        toast({
+          title: "Success!",
+          description: "You've successfully signed in."
+        });
+        
+        // Get the redirect path from state or default to home
+        const from = location.state?.from?.pathname || '/';
+        console.log("AUTH PAGE: Will navigate to:", from);
+        
+        // Add a short delay before navigation
+        setTimeout(() => {
+          console.log("AUTH PAGE: Now navigating to:", from);
+          navigate(from, { replace: true });
+        }, 300);
+      } else {
+        console.error("AUTH PAGE: Unexpected server response");
+        throw new Error("Unexpected server response");
+      }
+    } catch (error) {
+      console.error('Authentication error:', error);
+      
+      // Determine if it's a network error or API error
+      let errorMessage = "Please check your credentials and try again.";
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        errorMessage = "Network error: Unable to connect to the authentication server. Please check your connection and try again.";
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
       
       toast({
-        title: "Success!",
-        description: "You've successfully signed in."
-      });
-      
-      // Navigate to the page they came from or to home
-      navigate(from, { replace: true });
-    } catch (error) {
-      toast({
         title: "Authentication failed",
-        description: error instanceof Error ? error.message : "Please check your credentials and try again.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -141,11 +172,14 @@ const AuthPage = () => {
     
     try {
       setIsSigningUp(true);
-      const response = await fetch('/signup', {
+      const response = await fetch(`${API_URL}/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
         },
+        mode: 'cors',
         body: JSON.stringify({
           name: signupName,
           email: signupEmail,
@@ -154,7 +188,7 @@ const AuthPage = () => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ message: `Server error: ${response.status}` }));
         throw new Error(errorData.message || 'Registration failed');
       }
       
@@ -164,9 +198,19 @@ const AuthPage = () => {
       });
       setActiveTab('signin');
     } catch (error) {
+      console.error('Registration error:', error);
+      
+      // Determine if it's a network error or API error
+      let errorMessage = "Please try again later.";
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        errorMessage = "Network error: Unable to connect to the registration server. Please check your connection and try again.";
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Registration failed",
-        description: error instanceof Error ? error.message : "Please try again later.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
