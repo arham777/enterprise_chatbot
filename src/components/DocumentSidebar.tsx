@@ -224,6 +224,50 @@ const DocumentSidebar = () => {
               <Button 
                 variant="outline" 
                 size="sm" 
+                onClick={async () => {
+                  if (!confirm("Are you sure you want to delete ALL documents? This action cannot be undone.")) {
+                    return;
+                  }
+                  
+                  // Check if user email is available
+                  if (!userEmail) {
+                    alert('User email information is missing. Please sign out and sign in again.');
+                    return;
+                  }
+                  
+                  try {
+                    const response = await fetch(`${API_URL}/delete-all-files/?email=${encodeURIComponent(userEmail)}`, {
+                      method: 'POST',
+                      headers: {
+                        'Accept': 'application/json',
+                        'Origin': window.location.origin,
+                      },
+                      mode: 'cors'
+                    });
+                    
+                    if (!response.ok) {
+                      const errorText = await response.text();
+                      console.error('Server error:', errorText);
+                      throw new Error(`Failed to delete all documents: ${response.status} - ${errorText || 'Unknown error'}`);
+                    }
+                    
+                    // Refresh the document list
+                    fetchDocuments();
+                    alert('All documents have been deleted successfully.');
+                  } catch (err) {
+                    console.error('Error deleting all documents:', err);
+                    alert(`Error deleting all documents: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                  }
+                }}
+                className="w-full mb-2 text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete All Files
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                size="sm" 
                 onClick={() => {
                   setChatOpen(true);
                   setIsOpen(false);

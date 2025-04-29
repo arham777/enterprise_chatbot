@@ -66,7 +66,24 @@ const WelcomeMessage = () => (
   </div>
 );
 
-const ChatMessage = ({ isBot, content, timestamp }: { isBot: boolean, content: string, timestamp: string }) => (
+const ChatMessage = ({ 
+  isBot, 
+  content, 
+  timestamp, 
+  sourceDocument, 
+  suggestedQuestions,
+  onSuggestedQuestionClick 
+}: { 
+  isBot: boolean, 
+  content: string, 
+  timestamp: string,
+  sourceDocument?: string,
+  suggestedQuestions?: string[],
+  onSuggestedQuestionClick?: (question: string) => void
+}) => {
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  
+  return (
   <div className={`flex ${isBot ? 'justify-start' : 'justify-end'} mb-4`}>
     <div className={`flex max-w-[75%] md:max-w-[70%] ${isBot ? 'flex-row' : 'flex-row-reverse'}`}>
       <div className={`shrink-0 h-8 w-8 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${isBot ? 'bg-blue-100 mr-2 sm:mr-3' : 'bg-blue-100 ml-2 sm:ml-3'}`}>
@@ -83,9 +100,44 @@ const ChatMessage = ({ isBot, content, timestamp }: { isBot: boolean, content: s
         )}
       </div>
       <div className="flex flex-col">
+        {/* Source document if available */}
+        {isBot && sourceDocument && (
+          <div className="mb-1 px-2 py-1 bg-blue-50 rounded-t-lg flex items-center">
+            <FileText className="h-3 w-3 text-blue-500 mr-1" />
+            <span className="text-xs text-blue-600">Source: {sourceDocument}</span>
+          </div>
+        )}
+        
         <div className={`rounded-xl p-3 sm:p-4 ${isBot ? 'bg-gray-100' : 'bg-gradient-to-b from-blue-400 to-blue-600 text-white'}`}>
           <p className="text-sm">{content}</p>
         </div>
+        
+        {/* Suggested questions */}
+        {isBot && suggestedQuestions && suggestedQuestions.length > 0 && showSuggestions && (
+          <div className="mt-2 bg-white border border-gray-200 rounded-lg p-2">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-medium text-gray-500">Suggested questions</span>
+              <button 
+                className="text-xs text-gray-400 hover:text-gray-600"
+                onClick={() => setShowSuggestions(false)}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="flex flex-col gap-1">
+              {suggestedQuestions.map((question, idx) => (
+                <button
+                  key={idx}
+                  className="text-left text-xs py-1 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded"
+                  onClick={() => onSuggestedQuestionClick && onSuggestedQuestionClick(question)}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        
         <div className="flex mt-1 text-xs text-gray-500">
           <span>{timestamp}</span>
           {isBot && (
@@ -100,13 +152,19 @@ const ChatMessage = ({ isBot, content, timestamp }: { isBot: boolean, content: s
       </div>
     </div>
   </div>
-);
+)};
 
 const PremiumChatInterface = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
-  const [messages, setMessages] = useState<Array<{isBot: boolean, content: string, timestamp: string}>>([]);
+  const [messages, setMessages] = useState<Array<{
+    isBot: boolean, 
+    content: string, 
+    timestamp: string,
+    sourceDocument?: string,
+    suggestedQuestions?: string[]
+  }>>([]);
   const [show, setShow] = useState(true); // Controls welcome message
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -166,8 +224,7 @@ const PremiumChatInterface = () => {
         try {
           // Create request body
           const requestBody = JSON.stringify({
-            query: input.trim(),
-            kb_flag: false
+            query: input.trim()
           });
           
           // Make API call with email parameter
@@ -192,11 +249,20 @@ const PremiumChatInterface = () => {
           // Parse response
           const data = await response.json();
           
+          // Log source document information if available
+          if (data.source_document) {
+            console.log(`Response generated from source document: ${data.source_document}`);
+          } else if (data.source) {
+            console.log(`Response generated from source document: ${data.source}`);
+          }
+          
           // Add bot response
           setMessages(prev => [...prev, {
             isBot: true,
             content: data.response || "Sorry, I couldn't generate a response.",
-            timestamp: new Date().toLocaleTimeString()
+            timestamp: new Date().toLocaleTimeString(),
+            sourceDocument: data.source_document || data.source,
+            suggestedQuestions: data.suggested_questions
           }]);
         } catch (error) {
           console.error('Error fetching response:', error);
@@ -236,6 +302,12 @@ const PremiumChatInterface = () => {
     setFiles([]);
   };
 
+  const handleSuggestedQuestionClick = (question: string) => {
+    setInput(question);
+    // Optional: automatically submit the question
+    // handleSubmit(question);
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Chat Messages */}
@@ -248,6 +320,9 @@ const PremiumChatInterface = () => {
             isBot={message.isBot}
             content={message.content}
             timestamp={message.timestamp}
+            sourceDocument={message.sourceDocument}
+            suggestedQuestions={message.suggestedQuestions}
+            onSuggestedQuestionClick={handleSuggestedQuestionClick}
           />
         ))}
         

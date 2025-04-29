@@ -27,6 +27,8 @@ type ChatMessageType = {
   };
   isStreaming?: boolean; // Whether the message is currently being streamed
   loadingIndicator?: boolean; // Whether to show loading indicator instead of content
+  sourceDocument?: string; // Optional source document information
+  suggestedQuestions?: string[]; // Optional suggested follow-up questions
 };
 
 // Styled markdown renderer component
@@ -186,11 +188,20 @@ const StreamingText = ({ text }: { text: string }) => {
 // Helper component for chat messages with support for visualizations
 const ChatMessage = ({ message }: { message: ChatMessageType }) => {
   const isUser = message.type === 'user';
+  const [showSuggestedQuestions, setShowSuggestedQuestions] = useState(true);
   
   // Split multiple visualizations if they exist
   const visualizations = message.visualization 
     ? message.visualization.split("||VISUALIZATION_SEPARATOR||") 
     : [];
+
+  // Handle clicking a suggested question
+  const handleSuggestedQuestionClick = (question: string) => {
+    // Dispatch a custom event that the parent component (ChatAssistantButton) can listen for
+    window.dispatchEvent(new CustomEvent('suggested-question-click', { 
+      detail: { question }
+    }));
+  };
     
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
@@ -221,6 +232,16 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
             </div>
           )}
           
+          {/* Source document info for bot messages */}
+          {!isUser && message.sourceDocument && (
+            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded mb-3">
+              <FileText className="h-4 w-4 text-blue-500" />
+              <div>
+                <p className="text-xs text-gray-600">Source: {message.sourceDocument}</p>
+              </div>
+            </div>
+          )}
+          
           {/* Text content with streaming effect for bot messages */}
           {isUser ? (
             <p className="leading-relaxed whitespace-pre-wrap">{message.text}</p>
@@ -240,6 +261,32 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
           ) : (
             <div className="bot-response">
               <FormattedMarkdown>{message.text}</FormattedMarkdown>
+            </div>
+          )}
+
+          {/* Suggested questions */}
+          {!isUser && !message.isStreaming && !message.loadingIndicator && message.suggestedQuestions && Array.isArray(message.suggestedQuestions) && message.suggestedQuestions.length > 0 && showSuggestedQuestions && (
+            <div className="mt-4 pt-3 border-t border-gray-200">
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-xs font-medium text-gray-500">Suggested questions</p>
+                <button 
+                  onClick={() => setShowSuggestedQuestions(false)}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {message.suggestedQuestions.map((question, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleSuggestedQuestionClick(question)}
+                    className="text-left text-xs py-1.5 px-2.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                  >
+                    {question}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           
@@ -514,9 +561,50 @@ const ChatAssistantButton = () => {
     }
   };
 
-  const toggleKnowledgeBase = () => {
-    setUseKnowledgeBase(prev => !prev);
+  const toggleKnowledgeBase = async () => {
+    // Toggle state first for immediate UI feedback
+    const newState = !useKnowledgeBase;
+    setUseKnowledgeBase(newState);
     inputRef.current?.focus();
+    
+    // Check if user is authenticated and email is available
+    if (!userEmail) {
+      setChatHistory(prev => [...prev, { 
+        type: 'bot', 
+        text: 'Error: User email information is missing. Please sign out and sign in again.'
+      }]);
+      return;
+    }
+    
+    try {
+      // Call the knowledge base endpoint
+      const knowledgeBaseEndpoint = `${ORIGINAL_API_URL}/set-knowledge-base/`;
+      
+      const response = await fetch(knowledgeBaseEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+        },
+        body: JSON.stringify({
+          activate: newState,
+          email: userEmail
+        }),
+        mode: 'cors'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to ${newState ? 'activate' : 'deactivate'} knowledge base: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(`Knowledge base ${newState ? 'activated' : 'deactivated'}: `, data);
+      
+    } catch (error) {
+      console.error('Error toggling knowledge base:', error);
+      // Don't show error to user as we've already updated the UI
+    }
   };
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -694,13 +782,48 @@ const ChatAssistantButton = () => {
         // Automatically activate knowledge base when PDF is uploaded
         setUseKnowledgeBase(true);
         
+        // Call the knowledge base endpoint to activate it
+        try {
+          const knowledgeBaseEndpoint = `${ORIGINAL_API_URL}/set-knowledge-base/`;
+          
+          const kbResponse = await fetch(knowledgeBaseEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Origin': window.location.origin,
+            },
+            body: JSON.stringify({
+              activate: true,
+              email: userEmail
+            }),
+            mode: 'cors'
+          });
+          
+          if (!kbResponse.ok) {
+            console.error(`Failed to activate knowledge base: ${kbResponse.status}`);
+          } else {
+            const kbData = await kbResponse.json();
+            console.log("Knowledge base activated: ", kbData);
+          }
+        } catch (kbError) {
+          console.error('Error activating knowledge base:', kbError);
+          // Continue despite error as we've already updated the UI
+        }
+        
+        // Log source document information if available
+        if (data.source_document) {
+          console.log(`Response generated from source document: ${data.source_document}`);
+        }
+        
         setChatHistory(prev => [...prev, { 
           type: 'bot', 
           text: responseText,
           fileInfo: {
             filename: file.name,
             fileType: 'PDF'
-          }
+          },
+          sourceDocument: data.source_document
         }]);
         
         // No file ID concept for PDFs in this implementation
@@ -747,169 +870,236 @@ const ChatAssistantButton = () => {
     // Check if user is authenticated
     if (!checkAuth()) return;
 
-    // Add user message to chat history
-    setChatHistory(prev => [...prev, { type: 'user', text: trimmedMessage }]);
-    setMessage('');
-    setIsLoading(true);
-
-    // Add a placeholder for the bot's response with isStreaming=true
-    const placeholderIndex = chatHistory.length + 1;
-    setChatHistory(prev => [...prev, { 
-      type: 'bot', 
-      text: '', 
-      isStreaming: true,
-      loadingIndicator: true
-    }]);
-
-    // Create the request body matching the API's expected format
-    const requestBody = JSON.stringify({ 
-      query: trimmedMessage,
-      kb_flag: useKnowledgeBase
-    });
-
-    // Add debug logging to show if knowledge base is being used
-    console.log(`Sending query with knowledge base flag: ${useKnowledgeBase ? 'ON' : 'OFF'}`);
-    console.log('Request details:', { query: trimmedMessage, kb_flag: useKnowledgeBase, email: userEmail });
-    
-    // Check if we have the user email
-    if (!userEmail) {
-      console.error("User email is not available");
-      setChatHistory(prev => [
-        ...prev.slice(0, placeholderIndex),
-        { 
-          type: 'bot', 
-          text: `## Error\n\nUser email information is missing. Please sign out and sign in again.`,
-          isStreaming: false,
-          loadingIndicator: false
-        }
-      ]);
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      // Try direct call first without proxy
-      // Add email as query parameter
-      const apiEndpoint = `${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`;
-      console.log(`Attempting direct API call to: ${apiEndpoint}`);
-      
-      // Use a more complete set of headers to handle CORS properly
-      const response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Origin': window.location.origin,
-        },
-        body: requestBody,
-        mode: 'cors'
+      // Add user message to chat history
+      setChatHistory(prev => [...prev, { type: 'user', text: trimmedMessage }]);
+      setMessage('');
+      setIsLoading(true);
+
+      // Add a placeholder for the bot's response with isStreaming=true
+      const placeholderIndex = chatHistory.length + 1;
+      setChatHistory(prev => [...prev, { 
+        type: 'bot', 
+        text: '', 
+        isStreaming: true,
+        loadingIndicator: true
+      }]);
+
+      // Create the request body matching the API's expected format
+      const requestBody = JSON.stringify({ 
+        query: trimmedMessage
       });
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      // Parse the response
-      const data = await response.json();
+      // Add debug logging to show if knowledge base is being used
+      console.log(`Using knowledge base: ${useKnowledgeBase ? 'ON' : 'OFF'}`);
+      console.log('Request details:', { query: trimmedMessage, email: userEmail });
       
-      // Extract the response text from the data object
-      const responseText = data.response || 'No response received';
-
-      // Update the chat history with the response
-      setChatHistory(prev => [
-        ...prev.slice(0, placeholderIndex),
-        {
-          type: 'bot',
-          text: responseText,
-          isStreaming: true,
-          loadingIndicator: false
-        }
-      ]);
-      
-      // After a short delay, turn off streaming to complete animation
-      setTimeout(() => {
+      // Check if we have the user email
+      if (!userEmail) {
+        console.error("User email is not available");
         setChatHistory(prev => [
           ...prev.slice(0, placeholderIndex),
-          {
-            ...prev[placeholderIndex],
-            isStreaming: false
+          { 
+            type: 'bot', 
+            text: `## Error\n\nUser email information is missing. Please sign out and sign in again.`,
+            isStreaming: false,
+            loadingIndicator: false
           }
         ]);
-      }, responseText.length * 15); // Approximate time to finish the animation
-    } catch (error) {
-      console.error('Error fetching response:', error);
-      
-      // Try a fallback approach with different headers
+        setIsLoading(false);
+        return;
+      }
+
       try {
-        console.log("Direct API call failed. Attempting with alternative headers...");
+        // Try direct call first without proxy
+        // Add email as query parameter
+        const apiEndpoint = `${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`;
+        console.log(`Attempting direct API call to: ${apiEndpoint}`);
         
-        // Also include email in fallback attempt
-        const fallbackResponse = await fetch(`${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`, {
+        // Use a more complete set of headers to handle CORS properly
+        const response = await fetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Accept': '*/*',
-            'Connection': 'keep-alive',
+            'Accept': 'application/json',
+            'Origin': window.location.origin,
           },
           body: requestBody,
           mode: 'cors'
         });
-        
-        if (!fallbackResponse.ok) {
-          throw new Error(`API error: ${fallbackResponse.status}`);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API error response:', response.status, errorText);
+          throw new Error(`API error: ${response.status} - ${errorText || 'No error details'}`);
         }
+
+        // Parse the response
+        const data = await response.json();
         
-        const fallbackData = await fallbackResponse.json();
-        const fallbackText = fallbackData.response || 'No response received';
-        
+        // Extract the response text from the data object
+        const responseText = data.response || 'No response received';
+
+        // Log source document information if available
+        if (data.source_document) {
+          console.log(`Response generated from source document: ${data.source_document}`);
+        } else if (data.source) {
+          console.log(`Response generated from source document: ${data.source}`);
+        }
+
+        // Update the chat history with the response
         setChatHistory(prev => [
           ...prev.slice(0, placeholderIndex),
           {
             type: 'bot',
-            text: fallbackText,
+            text: responseText,
             isStreaming: true,
-            loadingIndicator: false
+            loadingIndicator: false,
+            sourceDocument: data.source_document || data.source,
+            suggestedQuestions: data.suggested_questions
           }
         ]);
-
+        
+        // After a short delay, turn off streaming to complete animation
         setTimeout(() => {
+          setChatHistory(prev => {
+            if (prev.length <= placeholderIndex) {
+              return prev; // Guard against out-of-bounds access
+            }
+            return [
+              ...prev.slice(0, placeholderIndex),
+              {
+                ...prev[placeholderIndex],
+                isStreaming: false
+              },
+              ...prev.slice(placeholderIndex + 1)
+            ];
+          });
+        }, responseText.length * 15); // Approximate time to finish the animation
+      } catch (error) {
+        console.error('Error fetching response:', error);
+        
+        // Try a fallback approach with different headers
+        try {
+          console.log("Direct API call failed. Attempting with alternative headers...");
+          
+          // Also include email in fallback attempt
+          const fallbackResponse = await fetch(`${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': '*/*',
+              'Connection': 'keep-alive',
+            },
+            body: requestBody,
+            mode: 'cors'
+          });
+          
+          if (!fallbackResponse.ok) {
+            const errorText = await fallbackResponse.text();
+            console.error('Fallback API error response:', fallbackResponse.status, errorText);
+            throw new Error(`API error: ${fallbackResponse.status} - ${errorText || 'No error details'}`);
+          }
+          
+          const fallbackData = await fallbackResponse.json();
+          const fallbackText = fallbackData.response || 'No response received';
+          
+          // Log source document information if available in fallback response
+          if (fallbackData.source_document) {
+            console.log(`Response generated from source document: ${fallbackData.source_document}`);
+          } else if (fallbackData.source) {
+            console.log(`Response generated from source document: ${fallbackData.source}`);
+          }
+          
           setChatHistory(prev => [
             ...prev.slice(0, placeholderIndex),
             {
-              ...prev[placeholderIndex],
-              isStreaming: false
+              type: 'bot',
+              text: fallbackText,
+              isStreaming: true,
+              loadingIndicator: false,
+              sourceDocument: fallbackData.source_document || fallbackData.source,
+              suggestedQuestions: fallbackData.suggested_questions
             }
           ]);
-        }, fallbackText.length * 15);
-        
-        // Exit early since we successfully used the fallback
-        return;
-      } catch (fallbackError) {
-        console.error('Fallback approach also failed:', fallbackError);
-        // Continue to the error handling below
-      }
-      
-      // Format error message based on the type of error
-      let errorDetail = 'Unknown error occurred';
-      
-      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-        errorDetail = 'Network Error: Unable to connect to the server. Please check your internet connection and try again. This may be caused by CORS restrictions. Try running this app from the same domain as the API or setting up a CORS proxy.';
-      } else if (error instanceof Error) {
-        errorDetail = error.message;
-      } else {
-        errorDetail = String(error);
-      }
-      
-      // Replace placeholder with error message
-      setChatHistory(prev => [
-        ...prev.slice(0, placeholderIndex),
-        { 
-          type: 'bot', 
-          text: `## Error\n\nSorry, I encountered an error while processing your request.\n\n**Details:** ${errorDetail}\n\nPlease try again later or contact support with this error message.`,
-          isStreaming: false,
-          loadingIndicator: false
+
+          setTimeout(() => {
+            setChatHistory(prev => {
+              if (prev.length <= placeholderIndex) {
+                return prev; // Guard against out-of-bounds access
+              }
+              return [
+                ...prev.slice(0, placeholderIndex),
+                {
+                  ...prev[placeholderIndex],
+                  isStreaming: false
+                },
+                ...prev.slice(placeholderIndex + 1)
+              ];
+            });
+          }, fallbackText.length * 15);
+          
+          // Exit early since we successfully used the fallback
+          return;
+        } catch (fallbackError) {
+          console.error('Fallback approach also failed:', fallbackError);
+          // Continue to the error handling below
+          
+          // Format error message based on the type of error
+          let errorDetail = 'Unknown error occurred';
+          
+          if (fallbackError instanceof TypeError && fallbackError.message.includes('Failed to fetch')) {
+            errorDetail = 'Network Error: Unable to connect to the server. Please check your internet connection and try again.';
+          } else if (fallbackError instanceof Error) {
+            errorDetail = fallbackError.message;
+          } else {
+            errorDetail = String(fallbackError);
+          }
+          
+          // Replace placeholder with error message
+          setChatHistory(prev => [
+            ...prev.slice(0, placeholderIndex),
+            { 
+              type: 'bot', 
+              text: `## Error\n\nSorry, I encountered an error while processing your request.\n\n**Details:** ${errorDetail}\n\nPlease try again later or contact support with this error message.`,
+              isStreaming: false,
+              loadingIndicator: false
+            }
+          ]);
         }
-      ]);
+      }
+    } catch (outerError) {
+      console.error('Unhandled error in sendMessage:', outerError);
+      // This catch block handles any unexpected errors that might occur outside the API calls
+      setChatHistory(prev => {
+        // Find the last bot message index if it exists
+        const lastBotIndex = [...prev].reverse().findIndex(msg => msg.type === 'bot');
+        const placeholderIndex = lastBotIndex >= 0 ? prev.length - 1 - lastBotIndex : prev.length; 
+        
+        // Add error message or update existing bot message
+        if (lastBotIndex >= 0 && prev[placeholderIndex].loadingIndicator) {
+          return [
+            ...prev.slice(0, placeholderIndex),
+            { 
+              type: 'bot', 
+              text: `## Error\n\nAn unexpected error occurred.\n\n**Details:** ${outerError instanceof Error ? outerError.message : 'Unknown error'}\n\nPlease try again.`,
+              isStreaming: false,
+              loadingIndicator: false
+            },
+            ...prev.slice(placeholderIndex + 1)
+          ];
+        } else {
+          return [
+            ...prev,
+            { 
+              type: 'bot', 
+              text: `## Error\n\nAn unexpected error occurred.\n\n**Details:** ${outerError instanceof Error ? outerError.message : 'Unknown error'}\n\nPlease try again.`,
+              isStreaming: false,
+              loadingIndicator: false
+            }
+          ];
+        }
+      });
     } finally {
       setIsLoading(false);
     }
@@ -938,6 +1128,22 @@ const ChatAssistantButton = () => {
   React.useEffect(() => {
     console.log("ChatAssistantButton - isMaximized changed:", isMaximized);
   }, [isMaximized]);
+
+  // Add event listener for suggested question clicks
+  useEffect(() => {
+    const handleSuggestedQuestionClick = (event: CustomEvent) => {
+      const question = event.detail.question;
+      setMessage(question);
+      // Optional: automatically send the question
+      // sendMessage(question);
+    };
+
+    window.addEventListener('suggested-question-click', handleSuggestedQuestionClick as EventListener);
+    
+    return () => {
+      window.removeEventListener('suggested-question-click', handleSuggestedQuestionClick as EventListener);
+    };
+  }, []);
 
   return (
     <>
@@ -1028,8 +1234,8 @@ const ChatAssistantButton = () => {
                       icon={Database} 
                       title="Knowledge Base" 
                       description="Chat with your files."
-                      onClick={() => {
-                        toggleKnowledgeBase();
+                      onClick={async () => {
+                        await toggleKnowledgeBase();
                         // Add a helpful message about knowledge base activation
                         setChatHistory(prev => [...prev, { 
                           type: 'bot', 
