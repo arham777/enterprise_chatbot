@@ -29,6 +29,8 @@ type ChatMessageType = {
   loadingIndicator?: boolean; // Whether to show loading indicator instead of content
   sourceDocument?: string; // Optional source document information
   suggestedQuestions?: string[]; // Optional suggested follow-up questions
+  inputCost?: number;
+  outputCost?: number;
 };
 
 // Styled markdown renderer component
@@ -68,19 +70,19 @@ const FormattedMarkdown = ({ children }: { children: string }) => {
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>
             ) : (
-              <code className="bg-gray-100 px-1.5 py-0.5 rounded" {...props}>
+              <code className="bg-secondary/30 px-1.5 py-0.5 rounded" {...props}>
                 {children}
               </code>
             );
           },
           h1({ node, ...props }) {
-            return <h1 className="text-xl font-bold mt-4 mb-2" {...props} />;
+            return <h1 className="text-xl font-semibold mt-3 mb-2" {...props} />;
           },
           h2({ node, ...props }) {
-            return <h2 className="text-lg font-bold mt-3 mb-2" {...props} />;
+            return <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />;
           },
           h3({ node, ...props }) {
-            return <h3 className="text-md font-bold mt-3 mb-1" {...props} />;
+            return <h3 className="text-base font-semibold mt-2 mb-1" {...props} />;
           },
           p({ node, ...props }) {
             return <p className="mb-2" {...props} />;
@@ -96,37 +98,37 @@ const FormattedMarkdown = ({ children }: { children: string }) => {
           },
           table({ node, ...props }) {
             return (
-              <div className="overflow-x-auto custom-scrollbar my-3 border border-gray-200 rounded-md">
+              <div className="overflow-x-auto custom-scrollbar my-3 border border-border rounded-md">
                 <table className="border-collapse min-w-full text-sm" {...props} />
               </div>
             );
           },
           thead({ node, ...props }) {
-            return <thead className="bg-gray-100 sticky top-0" {...props} />;
+            return <thead className="bg-secondary/50 sticky top-0" {...props} />;
           },
           tbody({ node, ...props }) {
-            return <tbody className="divide-y divide-gray-200" {...props} />;
+            return <tbody className="divide-y divide-border" {...props} />;
           },
           tr({ node, ...props }) {
-            return <tr className="hover:bg-gray-50" {...props} />;
+            return <tr className="hover:bg-secondary/30" {...props} />;
           },
           th({ node, ...props }) {
-            return <th className="px-3 py-2 text-left font-semibold text-gray-700" {...props} />;
+            return <th className="px-3 py-2 text-left font-medium text-foreground" {...props} />;
           },
           td({ node, ...props }) {
-            return <td className="px-3 py-2 whitespace-normal break-words border-t border-gray-200" {...props} />;
+            return <td className="px-3 py-2 whitespace-normal break-words border-t border-border" {...props} />;
           },
           a({ node, ...props }) {
-            return <a className="text-blue-500 underline hover:text-blue-700" {...props} />;
+            return <a className="text-primary underline hover:text-primary/80" {...props} />;
           },
           blockquote({ node, ...props }) {
-            return <blockquote className="border-l-4 border-gray-300 pl-4 my-2 italic" {...props} />;
+            return <blockquote className="border-l-4 border-border pl-4 my-2 italic" {...props} />;
           },
           img({ node, ...props }) {
             return <img className="max-w-full h-auto rounded-md my-2" {...props} />;
           },
           hr({ node, ...props }) {
-            return <hr className="my-4 border-gray-300" {...props} />;
+            return <hr className="my-4 border-border" {...props} />;
           }
         }}
       >
@@ -210,23 +212,23 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
         className={cn(
-          'rounded-lg px-4 py-3 text-sm shadow-sm',
+          'rounded-lg px-4 py-3 text-sm shadow-sm max-w-[85%]',
           isUser
-            ? 'blue-gradient text-white rounded-br-none max-w-[75%]'
-            : 'bg-white text-gray-800 rounded-bl-none max-w-[85%]'
+            ? 'bg-primary text-primary-foreground rounded-br-none'
+            : 'bg-card border border-border text-card-foreground rounded-bl-none'
         )}
       >
         <div className="space-y-2">
           {/* File upload info */}
           {message.fileInfo && (
-            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded mb-3">
-              <Table className="h-5 w-5 text-blue-500" />
+            <div className="flex items-center gap-2 p-2 bg-secondary/30 rounded mb-3">
+              <Table className="h-5 w-5 text-primary" />
               <div>
-                <p className="font-semibold text-blue-700">{message.fileInfo.filename}</p>
+                <p className="font-medium text-foreground">{message.fileInfo.filename}</p>
                 {message.fileInfo.fileType === 'CSV' && message.fileInfo.rows !== undefined && message.fileInfo.columns !== undefined ? (
-                  <p className="text-xs text-gray-600">{message.fileInfo.rows} rows · {message.fileInfo.columns.length} columns</p>
+                  <p className="text-xs text-muted-foreground">{message.fileInfo.rows} rows · {message.fileInfo.columns.length} columns</p>
                 ) : (
-                  <p className="text-xs text-gray-600">{message.fileInfo.fileType} document</p>
+                  <p className="text-xs text-muted-foreground">{message.fileInfo.fileType} document</p>
                 )}
               </div>
             </div>
@@ -234,10 +236,10 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
           
           {/* Source document info for bot messages */}
           {!isUser && message.sourceDocument && (
-            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded mb-3">
-              <FileText className="h-4 w-4 text-blue-500" />
+            <div className="flex items-center gap-2 p-2 bg-secondary/30 rounded mb-3">
+              <FileText className="h-4 w-4 text-primary" />
               <div>
-                <p className="text-xs text-gray-600">Source: {message.sourceDocument}</p>
+                <p className="text-xs text-muted-foreground">Source: {message.sourceDocument}</p>
               </div>
             </div>
           )}
@@ -247,11 +249,11 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
             <p className="leading-relaxed whitespace-pre-wrap">{message.text}</p>
           ) : message.loadingIndicator ? (
             <div className="bot-response relative flex items-center gap-2 h-6">
-              <div className="text-sm text-gray-500">Analyzing your request</div>
+              <div className="text-sm text-muted-foreground">Analyzing request</div>
               <div className="flex items-center space-x-1">
-                <div className="animate-pulse bg-blue-500 h-1.5 w-1.5 rounded-full"></div>
-                <div className="animate-pulse bg-blue-500 h-1.5 w-1.5 rounded-full" style={{ animationDelay: '0.2s' }}></div>
-                <div className="animate-pulse bg-blue-500 h-1.5 w-1.5 rounded-full" style={{ animationDelay: '0.4s' }}></div>
+                <div className="animate-pulse bg-primary h-1.5 w-1.5 rounded-full"></div>
+                <div className="animate-pulse bg-primary h-1.5 w-1.5 rounded-full" style={{ animationDelay: '0.2s' }}></div>
+                <div className="animate-pulse bg-primary h-1.5 w-1.5 rounded-full" style={{ animationDelay: '0.4s' }}></div>
               </div>
             </div>
           ) : message.isStreaming ? (
@@ -266,12 +268,12 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
 
           {/* Suggested questions */}
           {!isUser && !message.isStreaming && !message.loadingIndicator && message.suggestedQuestions && Array.isArray(message.suggestedQuestions) && message.suggestedQuestions.length > 0 && showSuggestedQuestions && (
-            <div className="mt-4 pt-3 border-t border-gray-200">
+            <div className="mt-4 pt-3 border-t border-border">
               <div className="flex justify-between items-center mb-2">
-                <p className="text-xs font-medium text-gray-500">Suggested questions</p>
+                <p className="text-xs font-medium text-muted-foreground">Suggested questions</p>
                 <button 
                   onClick={() => setShowSuggestedQuestions(false)}
-                  className="text-xs text-gray-400 hover:text-gray-600"
+                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -281,7 +283,7 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
                   <button
                     key={index}
                     onClick={() => handleSuggestedQuestionClick(question)}
-                    className="text-left text-xs py-1.5 px-2.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                    className="text-left text-xs py-1.5 px-2.5 rounded bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
                   >
                     {question}
                   </button>
@@ -292,8 +294,8 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
           
           {/* Visualizations if available */}
           {visualizations.length > 0 && (
-            <div className="mt-3 rounded-md overflow-hidden border border-gray-200 bg-white p-3">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Data Visualization</h4>
+            <div className="mt-3 rounded-md overflow-hidden border border-border bg-card p-3">
+              <h4 className="text-sm font-medium mb-2">Data Visualization</h4>
               
               {visualizations.length === 1 ? (
                 // Single visualization
@@ -310,7 +312,7 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
                 // Multiple visualizations
                 <div className={`grid ${visualizations.length === 2 ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'} gap-4`}>
                   {visualizations.map((viz, index) => (
-                    <div key={index} className="border border-gray-200 rounded-md p-2 visualization-item">
+                    <div key={index} className="border border-border rounded-md p-2 visualization-item">
                       <a href={viz} target="_blank" rel="noopener noreferrer">
                         <img 
                           src={viz} 
@@ -322,6 +324,12 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+          
+          {(message.inputCost !== undefined || message.outputCost !== undefined) && (
+            <div className="text-right text-xs text-muted-foreground mt-2">
+              Cost: ${((Number(message.inputCost) || 0) + (Number(message.outputCost) || 0)).toFixed(4)}
             </div>
           )}
         </div>
@@ -338,13 +346,13 @@ const WelcomeCard = ({ icon: Icon, title, description, onClick }: {
   onClick?: () => void
 }) => (
   <div 
-    className="group cursor-pointer rounded-lg border bg-card p-4 text-card-foreground shadow-sm transition-all hover:shadow-md hover:border-blue-400/50"
+    className="group cursor-pointer rounded-lg border bg-card p-4 text-card-foreground shadow-sm transition-all hover:shadow-md hover:border-primary/30"
     onClick={onClick}
   >
     <div className="mb-3 flex justify-center">
-      <Icon className="h-6 w-6 text-cybergen-primary transition-transform group-hover:scale-110" />
+      <Icon className="h-6 w-6 text-primary transition-transform group-hover:scale-110" />
     </div>
-    <h3 className="mb-1 text-center font-semibold text-sm">{title}</h3>
+    <h3 className="mb-1 text-center font-medium">{title}</h3>
     <p className="text-center text-xs text-muted-foreground">{description}</p>
   </div>
 );
@@ -1055,10 +1063,10 @@ const ChatAssistantButton = () => {
   };
 
   // Dynamic Classes
-  const chatWindowBaseClasses = "fixed shadow-xl border bg-card rounded-lg overflow-hidden flex flex-col transition-all duration-300 ease-out z-[100]";
-  const chatWindowMobileClasses = "inset-x-0 bottom-0 w-full h-[85vh] max-h-[85vh] rounded-b-none";
-  const chatWindowDesktopBase = "bottom-6 right-6 w-[440px] h-[600px] max-w-[95vw] max-h-[90vh]";
-  const chatWindowDesktopMaximized = "bottom-6 right-6 w-[700px] h-[80vh] max-w-[95vw] max-h-[90vh]";
+  const chatWindowBaseClasses = "fixed shadow-lg border bg-background rounded-lg overflow-hidden flex flex-col transition-all duration-300 ease-out z-[100]";
+  const chatWindowMobileClasses = "inset-x-0 bottom-0 w-full h-[90vh] max-h-[90vh] rounded-b-none";
+  const chatWindowDesktopBase = "bottom-4 right-4 w-[400px] h-[600px] max-w-[95vw] max-h-[90vh]";
+  const chatWindowDesktopMaximized = "bottom-4 right-4 left-4 top-4 w-auto h-auto max-w-none max-h-none rounded-lg";
   const chatWindowDesktopClasses = isMaximized ? chatWindowDesktopMaximized : chatWindowDesktopBase;
 
   // Add debug logs
@@ -1076,8 +1084,6 @@ const ChatAssistantButton = () => {
     const handleSuggestedQuestionClick = (event: CustomEvent) => {
       const question = event.detail.question;
       setMessage(question);
-      // Optional: automatically send the question
-      // sendMessage(question);
     };
 
     window.addEventListener('suggested-question-click', handleSuggestedQuestionClick as EventListener);
@@ -1103,10 +1109,10 @@ const ChatAssistantButton = () => {
         {isOpen && (
           <motion.div
             key="chat-window"
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            initial={{ opacity: 0, y: 20, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.95 }}
-            transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            exit={{ opacity: 0, y: 20, scale: 0.98 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className={cn(
               chatWindowBaseClasses,
               isMobile ? chatWindowMobileClasses : chatWindowDesktopClasses
@@ -1114,12 +1120,12 @@ const ChatAssistantButton = () => {
             style={{ transformOrigin: 'bottom right' }}
           >
             {/* Header */}
-            <CardHeader className="flex flex-row items-center justify-between p-3 border-b bg-gradient-to-r from-blue-50 to-blue-100 flex-shrink-0">
+            <CardHeader className="flex flex-row items-center justify-between p-3 border-b bg-card flex-shrink-0">
               <div className="flex items-center gap-2">
-                <span className="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-full border items-center justify-center blue-gradient">
-                  <Bot className="h-5 w-5 text-white"/>
-                 </span>
-                <h3 className="font-semibold text-base text-foreground">AI Assistant</h3>
+                <span className="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary/10 items-center justify-center">
+                  <Bot className="h-4 w-4 text-primary"/>
+                </span>
+                <h3 className="font-medium text-base">AI Assistant</h3>
               </div>
               <div className="flex items-center gap-1">
                 {!isMobile && (
@@ -1127,7 +1133,7 @@ const ChatAssistantButton = () => {
                     variant="ghost"
                     size="icon"
                     onClick={toggleMaximize}
-                    className="h-7 w-7 text-muted-foreground hover:bg-blue-100 hover:text-blue-600 cursor-pointer"
+                    className="h-7 w-7 text-muted-foreground hover:bg-secondary hover:text-foreground"
                     aria-label={isMaximized ? "Restore chat size" : "Maximize chat"}
                     type="button"
                   >
@@ -1138,7 +1144,7 @@ const ChatAssistantButton = () => {
                   variant="ghost"
                   size="icon"
                   onClick={toggleChat}
-                  className="h-7 w-7 text-muted-foreground hover:bg-blue-100 hover:text-blue-600"
+                  className="h-7 w-7 text-muted-foreground hover:bg-secondary hover:text-foreground"
                   aria-label="Close chat"
                   type="button"
                 >
@@ -1148,23 +1154,23 @@ const ChatAssistantButton = () => {
             </CardHeader>
 
             {/* Chat Body */}
-            <CardContent ref={chatBodyRef} className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50">
+            <CardContent ref={chatBodyRef} className="flex-grow overflow-y-auto p-4 space-y-4 bg-muted/20">
               {chatHistory.length === 0 ? (
                 // Welcome Screen
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2, duration: 0.4 }}
+                    transition={{ delay: 0.1, duration: 0.3 }}
                     className="flex flex-col items-center justify-center text-center h-full px-4"
                 >
-                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full blue-gradient shadow-lg">
-                    <Sparkles className="h-8 w-8 text-white" />
-                   </div>
-                   <h2 className="mb-2 text-xl font-bold text-foreground">How can I help?</h2>
-                   <p className="mb-6 max-w-md text-sm text-muted-foreground">
-                     Ask me anything, upload documents for analysis, or connect your data.
-                   </p>
-                   <div className={`grid w-full max-w-md gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                    <Bot className="h-6 w-6 text-primary" />
+                  </div>
+                  <h2 className="mb-2 text-xl font-medium">How can I help?</h2>
+                  <p className="mb-6 max-w-md text-sm text-muted-foreground">
+                    Ask me anything, upload documents for analysis, or connect your data.
+                  </p>
+                  <div className={`grid w-full max-w-md gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     <WelcomeCard 
                       icon={FileText} 
                       title="PDF Documents" 
@@ -1178,14 +1184,13 @@ const ChatAssistantButton = () => {
                       description="Chat with your files."
                       onClick={async () => {
                         await toggleKnowledgeBase();
-                        // Add a helpful message about knowledge base activation
                         setChatHistory(prev => [...prev, { 
                           type: 'bot', 
                           text: 'Knowledge Base has been activated. You can now ask questions about your uploaded documents. If you haven\'t uploaded any documents yet, you can do so using the paper clip icon in the chat input area.' 
                         }]);
                       }} 
                     />
-                   </div>
+                  </div>
                 </motion.div>
               ) : (
                 // Chat History
@@ -1196,22 +1201,22 @@ const ChatAssistantButton = () => {
             </CardContent>
 
             {/* Footer / Input Area */}
-            <CardFooter className="p-3 border-t bg-gradient-to-r from-blue-50 to-blue-100 flex-shrink-0">
+            <CardFooter className="p-3 border-t bg-card flex-shrink-0">
                 {useKnowledgeBase && (
                     <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0}}
-                        className="mb-2 text-xs text-blue-500 flex items-center gap-1 justify-center"
+                        className="mb-2 text-xs text-primary flex items-center gap-1 justify-center"
                     >
                         <Database className="h-3 w-3"/> Knowledge Base Active
                     </motion.div>
                 )}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full">
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="h-8 w-8 text-muted-foreground hover:text-blue-500 flex-shrink-0" 
+                  className="h-8 w-8 text-muted-foreground hover:text-primary flex-shrink-0" 
                   aria-label="Upload PDF document"
                   onClick={triggerFileUpload}
                   disabled={isLoading}
@@ -1223,8 +1228,8 @@ const ChatAssistantButton = () => {
                     size="icon"
                     onClick={toggleKnowledgeBase}
                     className={cn(
-                    "h-8 w-8 flex-shrink-0 hover:text-blue-500",
-                    useKnowledgeBase ? "text-blue-500 bg-blue-100" : "text-muted-foreground"
+                    "h-8 w-8 flex-shrink-0 hover:text-primary",
+                    useKnowledgeBase ? "text-primary bg-primary/10" : "text-muted-foreground"
                     )}
                     aria-label={useKnowledgeBase ? "Deactivate knowledge base" : "Activate knowledge base"}
                     title={useKnowledgeBase ? "Knowledge base active" : "Activate knowledge base"}
@@ -1240,25 +1245,25 @@ const ChatAssistantButton = () => {
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
                     placeholder="Ask anything..."
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 pr-10"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 pr-10"
                     disabled={isLoading}
                   />
                 </div>
-                 <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={resetChat}
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive flex-shrink-0"
-                    aria-label="Reset chat"
-                    title="Reset chat"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={resetChat}
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive flex-shrink-0"
+                  aria-label="Reset chat"
+                  title="Reset chat"
                   disabled={chatHistory.length === 0 && message === '' || isLoading}
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
                 <Button
                   size="icon"
                   onClick={sendMessage}
-                  className="h-8 w-8 rounded-full blue-gradient text-white flex-shrink-0 hover:shadow-md disabled:opacity-50"
+                  className="h-8 w-8 bg-primary text-primary-foreground flex-shrink-0 hover:bg-primary/90 rounded-full"
                   aria-label="Send message"
                   disabled={message.trim() === '' || isLoading}
                 >
@@ -1278,18 +1283,18 @@ const ChatAssistantButton = () => {
       {!isOpen && (
         <motion.div
           key="chat-button"
-          initial={{ opacity: 0, scale: 0.8, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.8, y: 20 }}
-          transition={{ type: 'spring', damping: 15, stiffness: 200 }}
-          className="fixed bottom-6 right-6 z-50"
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+          className="fixed bottom-4 right-4 z-50"
         >
           <Button
             onClick={toggleChat}
-            className="h-14 w-14 rounded-full blue-gradient-button shadow-lg flex items-center justify-center"
+            className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-md flex items-center justify-center hover:bg-primary/90"
             aria-label="Open chat assistant"
           >
-            <MessageSquare className="h-6 w-6" />
+            <MessageSquare className="h-5 w-5" />
           </Button>
         </motion.div>
       )}
