@@ -299,7 +299,7 @@ const PremiumChatInterface = () => {
     setMessages([]);
     setShow(true);
     setInput("");
-    setFiles([]);
+    // No document deletion functionality here
   };
 
   const handleSuggestedQuestionClick = (question: string) => {
@@ -307,6 +307,28 @@ const PremiumChatInterface = () => {
     // Optional: automatically submit the question
     // handleSubmit(question);
   };
+
+  // Add an effect to listen for document-related events
+  useEffect(() => {
+    // Handle any document-related messaging between components
+    const handleDocumentEvents = (event: MessageEvent) => {
+      // Only process messages from our origin
+      if (event.origin !== window.location.origin) return;
+      
+      // Check for document-related events
+      if (event.data && event.data.type === 'SELECT_DOCUMENT') {
+        // Handle document selection
+        console.log('Document selected:', event.data.payload.documentName);
+        // You might want to do something with the selected document
+      }
+    };
+
+    window.addEventListener('message', handleDocumentEvents);
+    
+    return () => {
+      window.removeEventListener('message', handleDocumentEvents);
+    };
+  }, []);
 
   return (
     <div className="flex flex-col h-full">

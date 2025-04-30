@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, X, Trash2, RefreshCw } from 'lucide-react';
+import { FileText, X, Trash2, RefreshCw, LogIn } from 'lucide-react';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { useChatAssistant } from './HeroSection';
 import { useAuth } from '@/context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 // Get API URL from environment variables
 const API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
@@ -16,6 +17,7 @@ const DocumentSidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { setIsOpen: setChatOpen } = useChatAssistant();
   const { userEmail } = useAuth();
+  const navigate = useNavigate();
 
   const fetchDocuments = async () => {
     setIsLoading(true);
@@ -23,7 +25,6 @@ const DocumentSidebar = () => {
     
     // Check if user email is available
     if (!userEmail) {
-      setError('User email information is missing. Please sign out and sign in again.');
       setIsLoading(false);
       return;
     }
@@ -168,15 +169,14 @@ const DocumentSidebar = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              {isLoading ? (
+              {!userEmail ? (
+                <div className="text-center text-gray-500 py-8">
+                  <LogIn className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p>Sign in to access the documents history</p>
+                </div>
+              ) : isLoading ? (
                 <div className="flex justify-center items-center h-20">
                   <RefreshCw className="h-6 w-6 text-blue-500 animate-spin" />
-                </div>
-              ) : error ? (
-                <div className="text-center text-gray-500 py-8">
-                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                  <p>No document uploaded yet</p>
-                  <p className="text-sm mt-2">Upload documents using the chat assistant</p>
                 </div>
               ) : documents.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
@@ -221,62 +221,79 @@ const DocumentSidebar = () => {
             </div>
 
             <div className="p-4 border-t">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={async () => {
-                  if (!confirm("Are you sure you want to delete ALL documents? This action cannot be undone.")) {
-                    return;
-                  }
+              {userEmail ? (
+                <>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={async () => {
+                      if (!confirm("Are you sure you want to delete ALL documents? This action cannot be undone.")) {
+                        return;
+                      }
+                      
+                      // Check if user email is available
+                      if (!userEmail) {
+                        alert('User email information is missing. Please sign out and sign in again.');
+                        return;
+                      }
+                      
+                      try {
+                        const response = await fetch(`${API_URL}/delete-all-files/?email=${encodeURIComponent(userEmail)}`, {
+                          method: 'POST',
+                          headers: {
+                            'Accept': 'application/json',
+                            'Origin': window.location.origin,
+                          },
+                          mode: 'cors'
+                        });
+                        
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          console.error('Server error:', errorText);
+                          throw new Error(`Failed to delete all documents: ${response.status} - ${errorText || 'Unknown error'}`);
+                        }
+                        
+                        // Refresh the document list
+                        fetchDocuments();
+                        alert('All documents have been deleted successfully.');
+                      } catch (err) {
+                        console.error('Error deleting all documents:', err);
+                        alert(`Error deleting all documents: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                      }
+                    }}
+                    className="w-full mb-2 text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete All Files
+                  </Button>
                   
-                  // Check if user email is available
-                  if (!userEmail) {
-                    alert('User email information is missing. Please sign out and sign in again.');
-                    return;
-                  }
-                  
-                  try {
-                    const response = await fetch(`${API_URL}/delete-all-files/?email=${encodeURIComponent(userEmail)}`, {
-                      method: 'POST',
-                      headers: {
-                        'Accept': 'application/json',
-                        'Origin': window.location.origin,
-                      },
-                      mode: 'cors'
-                    });
-                    
-                    if (!response.ok) {
-                      const errorText = await response.text();
-                      console.error('Server error:', errorText);
-                      throw new Error(`Failed to delete all documents: ${response.status} - ${errorText || 'Unknown error'}`);
-                    }
-                    
-                    // Refresh the document list
-                    fetchDocuments();
-                    alert('All documents have been deleted successfully.');
-                  } catch (err) {
-                    console.error('Error deleting all documents:', err);
-                    alert(`Error deleting all documents: ${err instanceof Error ? err.message : 'Unknown error'}`);
-                  }
-                }}
-                className="w-full mb-2 text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete All Files
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => {
-                  setChatOpen(true);
-                  setIsOpen(false);
-                }}
-                className="w-full"
-              >
-                <FileText className="h-4 w-4 mr-2" />
-                Upload New Document
-              </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      setChatOpen(true);
+                      setIsOpen(false);
+                    }}
+                    className="w-full"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Upload New Document
+                  </Button>
+                </>
+              ) : (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate('/auth'); // Navigate to sign-in page
+                  }}
+                  className="w-full"
+                >
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Sign in
+                </Button>
+              )}
             </div>
           </motion.div>
         )}
