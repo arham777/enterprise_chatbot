@@ -714,11 +714,11 @@ const ChatAssistantButton = () => {
         
         // Check if the response is an object with a message property (from FastAPI)
         if (data && typeof data === 'object' && data.message) {
-          responseText = `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.`;
+          responseText = `The **${file.name}** has been uploaded successfully. You can ask any questions related to this document.`;
         } else {
           responseText = typeof data === 'string' 
             ? data 
-            : `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.`;
+            : `The **${file.name}** has been uploaded successfully. You can ask any questions related to this document.`;
         }
         
         // Automatically activate knowledge base when PDF is uploaded
