@@ -136,10 +136,11 @@ const DocumentSidebar = () => {
       >
         <Button
           onClick={toggleSidebar}
-          className="h-14 w-14 rounded-full blue-gradient-button shadow-lg flex items-center justify-center"
-          aria-label="View documents"
+          className="h-14 px-4 rounded-full blue-gradient-button shadow-lg flex items-center justify-center gap-2"
+          aria-label="Knowledge Base"
         >
-          <FileText className="h-6 w-6" />
+          <FileText className="h-5 w-5" />
+          <span className="font-medium text-sm">Knowledge Base</span>
         </Button>
       </motion.div>
 
