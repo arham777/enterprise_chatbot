@@ -24,7 +24,8 @@ import {
   Copy,
   Save,
   Upload,
-  Database
+  Database,
+  Globe
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -101,10 +102,19 @@ const ChatMessage = ({
       </div>
       <div className="flex flex-col">
         {/* Source document if available */}
-        {isBot && sourceDocument && (
+        {isBot && (
           <div className="mb-1 px-2 py-1 bg-blue-50 rounded-t-lg flex items-center">
-            <FileText className="h-3 w-3 text-blue-500 mr-1" />
-            <span className="text-xs text-blue-600">Source: {sourceDocument}</span>
+            {!sourceDocument || sourceDocument === "N/A" ? (
+              <>
+                <Globe className="h-3 w-3 text-blue-500 mr-1" />
+                <span className="text-xs text-blue-600">web search</span>
+              </>
+            ) : (
+              <>
+                <FileText className="h-3 w-3 text-blue-500 mr-1" />
+                <span className="text-xs text-blue-600">Source: {sourceDocument}</span>
+              </>
+            )}
           </div>
         )}
         

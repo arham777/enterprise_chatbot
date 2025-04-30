@@ -43,8 +43,6 @@ const AuthPage = () => {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const [agreeTerms, setAgreeTerms] = useState(false);
   
   // Form submission states
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -156,15 +154,6 @@ const AuthPage = () => {
       toast({
         title: "Error",
         description: "Passwords don't match",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    if (!agreeTerms) {
-      toast({
-        title: "Error",
-        description: "You must agree to terms and conditions",
         variant: "destructive"
       });
       return;
@@ -294,16 +283,6 @@ const AuthPage = () => {
                         />
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="remember-me" 
-                        checked={rememberMe}
-                        onCheckedChange={(checked) => setRememberMe(checked as boolean)}
-                      />
-                      <Label htmlFor="remember-me" className="text-sm font-normal">
-                        Remember me for 30 days
-                      </Label>
-                    </div>
                     <Button 
                       type="submit" 
                       className="w-full bg-cybergen-primary hover:bg-cybergen-secondary"
@@ -387,20 +366,6 @@ const AuthPage = () => {
                           required
                         />
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="agree-terms" 
-                        checked={agreeTerms}
-                        onCheckedChange={(checked) => setAgreeTerms(checked as boolean)}
-                        required
-                      />
-                      <Label htmlFor="agree-terms" className="text-sm font-normal">
-                        I agree to the{' '}
-                        <Link to="/terms" className="text-primary hover:underline">
-                          terms and conditions
-                        </Link>
-                      </Label>
                     </div>
                     <Button 
                       type="submit" 

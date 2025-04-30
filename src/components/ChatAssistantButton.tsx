@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { MessageSquare, X, FileText, BarChart3, Database, Paperclip, Send, RefreshCw, Maximize2, Minus, Sparkles, Bot, Loader2, Table } from 'lucide-react';
+import { MessageSquare, X, FileText, BarChart3, Database, Paperclip, Send, RefreshCw, Maximize2, Minus, Sparkles, Bot, Loader2, Table, Globe } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardFooter } from './ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -142,7 +142,7 @@ const FormattedMarkdown = ({ children }: { children: string }) => {
 const StreamingText = ({ text }: { text: string }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
-  
+
   useEffect(() => {
     // Reset if text changes
     if (displayedText === '' && text) {
@@ -235,12 +235,23 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
           )}
           
           {/* Source document info for bot messages */}
-          {!isUser && message.sourceDocument && (
+          {!isUser && (
             <div className="flex items-center gap-2 p-2 bg-secondary/30 rounded mb-3">
-              <FileText className="h-4 w-4 text-primary" />
-              <div>
-                <p className="text-xs text-muted-foreground">Source: {message.sourceDocument}</p>
-              </div>
+              {!message.sourceDocument || message.sourceDocument === "N/A" ? (
+                <>
+                  <Globe className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">web search</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <FileText className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Source: {message.sourceDocument}</p>
+                  </div>
+                </>
+              )}
             </div>
           )}
           
@@ -364,9 +375,12 @@ const ChatAssistantButton = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [message, setMessage] = useState('');
+  // Ensure knowledge base is disabled by default
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessageType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // Track if we've already attempted to load chat history
+  const [historyLoadAttempted, setHistoryLoadAttempted] = useState(false);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -375,6 +389,144 @@ const ChatAssistantButton = () => {
 
   // Define API base URL and CORS proxy functionality
   const ORIGINAL_API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
+  
+  // Function to fetch chat history for the user
+  const fetchChatHistory = async (email: string) => {
+    if (!email) return;
+    
+    // Set the flag to indicate we've attempted to load history
+    setHistoryLoadAttempted(true);
+    setIsLoading(true);
+    
+    try {
+      // We're going to use a simple approach - any error is treated as "chat history is empty"
+      // This ensures we never show error messages in the console
+      const historyEndpoint = `${API_BASE_URL}/chat-history/${encodeURIComponent(email)}`;
+      
+      // Create a type-safe promise result
+      type XhrResult = { success: boolean; data?: string };
+      
+      // Use XMLHttpRequest to access both status and response text even in error cases
+      const result = await new Promise<XhrResult>((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', historyEndpoint, true);
+        xhr.setRequestHeader('Accept', 'text/csv, application/json');
+        
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState === 4) { // Request is done
+            if (xhr.status === 200) {
+              // Success case - valid data returned
+              resolve({ success: true, data: xhr.responseText });
+            } else {
+              // For any error status, just log and return empty chat
+              console.log('The chat history is Empty');
+              resolve({ success: false });
+            }
+          }
+        };
+        
+        // Handle network errors
+        xhr.onerror = function() {
+          console.log('The chat history is Empty');
+          resolve({ success: false });
+        };
+        
+        // Set a timeout to handle stalled requests
+        setTimeout(() => {
+          if (xhr.readyState < 4) {
+            xhr.abort();
+            console.log('The chat history is Empty - request timed out');
+            resolve({ success: false });
+          }
+        }, 10000); // 10 second timeout
+        
+        // Send the request
+        xhr.send();
+      });
+      
+      // If the request wasn't successful, we're done
+      if (!result.success || !result.data) return;
+      
+      // Get the data from the successful response
+      const responseData = result.data;
+      
+      // Check for empty data
+      if (!responseData || responseData.trim() === '') {
+        console.log('The chat history is empty (empty response)');
+        return;
+      }
+      
+      // Try to parse the JSON data
+      let jsonData;
+      try {
+        jsonData = JSON.parse(responseData);
+      } catch (parseError) {
+        console.log('The chat history is empty (invalid format)');
+        return;
+      }
+      
+      // Check for valid history structure
+      if (!jsonData || !jsonData.history || !Array.isArray(jsonData.history)) {
+        console.log('The chat history is empty (invalid data structure)');
+        return;
+      }
+      
+      // Check for empty history array
+      if (jsonData.history.length === 0) {
+        console.log('The chat history is empty (empty history received)');
+        return;
+      }
+      
+      // Convert history to our format
+      const formattedHistory = convertHistoryToChatMessages(jsonData.history);
+      
+      // Check if we have any valid messages
+      if (formattedHistory.length === 0) {
+        console.log('The chat history is empty (no valid messages found)');
+        return;
+      }
+      
+      // Success! Update the chat history
+      setChatHistory(formattedHistory);
+      console.log(`Chat history loaded successfully: ${formattedHistory.length} messages`);
+    } catch (error) {
+      // Catch any other errors we didn't anticipate
+      console.log('The chat history is empty - could not process data');
+    } finally {
+      // Always make sure we're not in loading state
+      setIsLoading(false);
+    }
+  };
+  
+  // Helper function to convert API history format to our ChatMessageType format
+  const convertHistoryToChatMessages = (history: any[]): ChatMessageType[] => {
+    const chatMessages: ChatMessageType[] = [];
+    
+    // Process history items in pairs (system+user)
+    for (let i = 0; i < history.length; i++) {
+      const item = history[i];
+      
+      if (item.role === 'user') {
+        // Add user message
+        chatMessages.push({
+          type: 'user',
+          text: item.content,
+        });
+        
+        // Check if there's a bot response after this user message
+        if (i + 1 < history.length && history[i + 1].role === 'assistant') {
+          chatMessages.push({
+            type: 'bot',
+            text: history[i + 1].content,
+            // Add any additional properties if available in the data
+          });
+          i++; // Skip the assistant message we just processed
+        }
+      }
+    }
+    
+    return chatMessages;
+  };
   
   // Helper function to create a CORS proxy URL if needed
   const createProxiedUrl = (url: string): string => {
@@ -455,11 +607,38 @@ const ChatAssistantButton = () => {
     if (isDevelopment) {
       console.info(`Using API URL: ${API_BASE_URL} ${API_BASE_URL !== ORIGINAL_API_URL ? '(with CORS proxy)' : ''}`);
     }
+    
+    // Cleanup function to clear chat history when component unmounts
+    return () => {
+      setChatHistory([]);
+    };
   }, [API_BASE_URL]);
+  
+  // Load user-specific chat history when component mounts or when user opens the chat
+  useEffect(() => {
+    // Only attempt to load chat history if:
+    // 1. Chat is open
+    // 2. We have a user email
+    // 3. Chat history is empty
+    // 4. We haven't already tried loading history during this session
+    // 5. We're not currently loading something else
+    if (isOpen && userEmail && chatHistory.length === 0 && !historyLoadAttempted && !isLoading) {
+      console.log('Attempting to load chat history for user:', userEmail);
+      fetchChatHistory(userEmail);
+    }
+  }, [isOpen, userEmail, chatHistory.length, historyLoadAttempted, isLoading]);
 
+  // Clear chat history when the chat is closed
   useEffect(() => {
     if (isOpen && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 300);
+    }
+    
+    if (!isOpen) {
+      // Reset chat history when chat is closed
+      setChatHistory([]);
+      // Also reset the history load attempted flag so we start fresh next time
+      setHistoryLoadAttempted(false);
     }
   }, [isOpen]);
 
@@ -467,6 +646,8 @@ const ChatAssistantButton = () => {
     const handleEscKey = (event: KeyboardEvent) => {
       if (isOpen && event.key === 'Escape') {
         setIsOpen(false);
+        // Reset chat history when closed with Escape key
+        setChatHistory([]);
       }
     };
     window.addEventListener('keydown', handleEscKey);
@@ -490,14 +671,48 @@ const ChatAssistantButton = () => {
   };
 
   const resetChat = () => {
+    // Show a confirmation dialog before resetting chat
+    if (!confirm("Are you sure? This will delete your chat history")) {
+      return; // User cancelled the operation
+    }
+    
     // Check if there's any PDF document in the chat history
     const hasPdfDocument = chatHistory.some(
       msg => msg.fileInfo?.fileType === 'PDF'
     );
     
+    // Delete the chat_history.csv file if user is authenticated
+    if (userEmail) {
+      // Make API call to delete the chat history file
+      try {
+        const deleteUrl = `${ORIGINAL_API_URL}/delete-file/?file_name=${encodeURIComponent("chat_history.csv")}&email=${encodeURIComponent(userEmail)}`;
+        
+        fetch(deleteUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json'
+          },
+          mode: 'cors'
+        }).then(response => {
+          if (!response.ok) {
+            console.error('Failed to delete chat history file:', response.status);
+          } else {
+            console.log('Chat history file deleted successfully');
+          }
+        }).catch(err => {
+          console.error('Error deleting chat history file:', err);
+        });
+      } catch (err) {
+        console.error('Error initiating delete request:', err);
+      }
+    }
+    
     // Clear chat history
     setChatHistory([]);
     setMessage('');
+    
+    // Reset history load attempted flag so we can try loading history again
+    setHistoryLoadAttempted(false);
     
     // Only reset knowledge base if there's no PDF document
     if (!hasPdfDocument) {
@@ -506,9 +721,48 @@ const ChatAssistantButton = () => {
     
     setActiveFileId(null);
     inputRef.current?.focus();
+  };
 
-    // Remove document deletion confirmation and API call
-    // We will never delete documents when just clearing chat
+  // Helper function to update knowledge base state on the backend
+  const updateKnowledgeBaseState = async (activate: boolean) => {
+    // Check if user is authenticated and email is available
+    if (!userEmail) {
+      console.error('Cannot update knowledge base state: user email is missing');
+      return false;
+    }
+    
+    try {
+      // Call the knowledge base endpoint
+      const knowledgeBaseEndpoint = `${ORIGINAL_API_URL}/set-knowledge-base/`;
+      
+      console.log(`Setting knowledge base state: activate=${activate}`);
+      
+      const response = await fetch(knowledgeBaseEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+        },
+        body: JSON.stringify({
+          activate: activate, // Explicit boolean value - true to activate, false to deactivate
+          email: userEmail
+        }),
+        mode: 'cors'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to ${activate ? 'activate' : 'deactivate'} knowledge base: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(`Knowledge base ${activate ? 'activated' : 'deactivated'}: `, data);
+      return true;
+      
+    } catch (error) {
+      console.error(`Error ${activate ? 'activating' : 'deactivating'} knowledge base:`, error);
+      return false;
+    }
   };
 
   const toggleKnowledgeBase = async () => {
@@ -526,35 +780,8 @@ const ChatAssistantButton = () => {
       return;
     }
     
-    try {
-      // Call the knowledge base endpoint
-      const knowledgeBaseEndpoint = `${ORIGINAL_API_URL}/set-knowledge-base/`;
-      
-      const response = await fetch(knowledgeBaseEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Origin': window.location.origin,
-        },
-        body: JSON.stringify({
-          activate: newState,
-          email: userEmail
-        }),
-        mode: 'cors'
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to ${newState ? 'activate' : 'deactivate'} knowledge base: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log(`Knowledge base ${newState ? 'activated' : 'deactivated'}: `, data);
-      
-    } catch (error) {
-      console.error('Error toggling knowledge base:', error);
-      // Don't show error to user as we've already updated the UI
-    }
+    // Update the backend with the new state
+    await updateKnowledgeBaseState(newState);
   };
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -712,6 +939,20 @@ const ChatAssistantButton = () => {
         try {
           // Try to parse as JSON
           data = JSON.parse(text);
+          
+          // Automatically enable knowledge base if it's not already enabled
+          if (!useKnowledgeBase) {
+            setUseKnowledgeBase(true);
+            
+            // Use the helper function to properly update knowledge base state on the backend
+            const result = await updateKnowledgeBaseState(true);
+            if (result) {
+              console.log('Knowledge base automatically activated after document upload');
+            } else {
+              console.error('Failed to automatically activate knowledge base after upload');
+              // Continue processing even if knowledge base activation fails
+            }
+          }
         } catch (e) {
           // If not JSON, use text directly
           data = text;
@@ -766,12 +1007,19 @@ const ChatAssistantButton = () => {
           console.log(`Response generated from source document: ${data.source_document}`);
         }
         
+        // If we've got this far, it means we successfully uploaded the file
+        // Create a friendly success message with knowledge base activation notification
+        let successMessage = `PDF document **${file.name}** has been uploaded successfully.`;
+        if (!useKnowledgeBase) {
+          successMessage += '\n\nThe knowledge base has been automatically activated. You can now ask questions about your document content.';
+        }
+        
         setChatHistory(prev => [...prev, { 
-          type: 'bot', 
-          text: responseText,
+          type: 'bot',
+          text: successMessage,
           fileInfo: {
             filename: file.name,
-            fileType: 'PDF'
+            fileType: 'PDF',
           },
           sourceDocument: data.source_document
         }]);

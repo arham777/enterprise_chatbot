@@ -43,7 +43,18 @@ const DocumentSidebar = () => {
       });
 
       if (!response.ok) {
-        // Just set documents to empty array instead of throwing an error
+        // Set appropriate error message based on status code
+        if (response.status >= 500) {
+          // For 500 errors, just set documents to empty array without setting an error
+          // This will show the "No document uploaded yet" message instead of an error
+          console.log(`Server error (${response.status}): The server is currently unavailable, showing empty document list.`);
+        } else if (response.status === 404) {
+          setError("API endpoint not found. Please try again later.");
+        } else if (response.status === 401 || response.status === 403) {
+          setError("Authentication error. Please sign in again.");
+        } else {
+          setError(`Error (${response.status}): Failed to load documents.`);
+        }
         setDocuments([]);
         setIsLoading(false);
         return;
@@ -53,7 +64,8 @@ const DocumentSidebar = () => {
       setDocuments(data.documents || []);
     } catch (err) {
       console.error('Error fetching documents:', err);
-      // Don't set error message, just set documents to empty array
+      // Set network error message
+      setError("Network error: Could not connect to the server. Please check your internet connection.");
       setDocuments([]);
     } finally {
       setIsLoading(false);
@@ -179,7 +191,22 @@ const DocumentSidebar = () => {
                 <div className="flex justify-center items-center h-20">
                   <RefreshCw className="h-6 w-6 text-blue-500 animate-spin" />
                 </div>
-              ) : documents.length === 0 ? (
+              ) : error ? (
+                <div className="text-center text-red-500 py-8">
+                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-30 text-red-500" />
+                  <p className="font-medium">Error Loading Documents</p>
+                  <p className="text-sm mt-2">{error}</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={fetchDocuments}
+                    className="mt-4 text-blue-500 border-blue-200 hover:bg-blue-50"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                </div>
+              ) : documents.filter(doc => doc !== "chat_history.csv").length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
                   <p>No document uploaded yet</p>
@@ -187,7 +214,7 @@ const DocumentSidebar = () => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {documents.map((doc) => (
+                  {documents.filter(doc => doc !== "chat_history.csv").map((doc) => (
                     <div 
                       key={doc}
                       className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors relative group"
@@ -262,7 +289,8 @@ const DocumentSidebar = () => {
                         alert(`Error deleting all documents: ${err instanceof Error ? err.message : 'Unknown error'}`);
                       }
                     }}
-                    className="w-full mb-2 text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
+                    className={`w-full mb-2 ${documents.filter(doc => doc !== "chat_history.csv").length === 0 ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200'}`}
+                    disabled={documents.filter(doc => doc !== "chat_history.csv").length === 0}
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete All Files
