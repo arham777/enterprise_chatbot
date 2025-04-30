@@ -63,6 +63,12 @@ const Header = () => {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link to="/profile">
+            <User className="mr-2 h-4 w-4" />
+            My Profile
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={logout} className="cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />
           Sign out
@@ -93,12 +99,20 @@ const Header = () => {
             </a>
           ))}
           {isAuthenticated ? (
-            <Button 
-              onClick={logout}
-              className="mt-4 bg-cybergen-primary hover:bg-cybergen-secondary w-full"
-            >
-              Sign Out
-            </Button>
+            <>
+              <Link 
+                to="/profile"
+                className="text-foreground hover:text-cybergen-primary transition-colors font-medium text-lg py-2"
+              >
+                My Profile
+              </Link>
+              <Button 
+                onClick={logout}
+                className="mt-2 bg-cybergen-primary hover:bg-cybergen-secondary w-full"
+              >
+                Sign Out
+              </Button>
+            </>
           ) : (
             <Link to="/auth">
               <Button className="mt-4 bg-cybergen-primary hover:bg-cybergen-secondary w-full">

@@ -23,17 +23,17 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-muted/50 border-t border-border mt-auto">
+    <footer className="bg-black border-t border-gray-800 mt-auto">
       <div className="container mx-auto px-6 py-8">
         <div className="flex flex-col items-center text-center mb-6">
           <a href="https://www.cybergen.com" target="_blank" rel="noopener noreferrer" aria-label="Cybergen Home">
             <img
               src="/cybergen-logo.png"
               alt="Cybergen Logo"
-              className="h-[160px] w-auto mb-4"
+              className="h-[160px] w-auto mb-4 filter invert"
             />
           </a>
-          <p className="text-muted-foreground text-sm max-w-md">
+          <p className="text-gray-300 text-sm max-w-md">
             Empowering enterprises with AI-driven solutions. Process, analyze, and unlock insights effortlessly.
           </p>
         </div>
@@ -46,7 +46,7 @@ const Footer = () => {
               href={link.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-muted-foreground hover:text-primary hover:underline underline-offset-4"
+              className="text-sm text-gray-300 hover:text-white hover:underline underline-offset-4"
             >
               {link.name}
             </a>
@@ -62,17 +62,17 @@ const Footer = () => {
               target="_blank" 
               rel="noopener noreferrer" 
               aria-label={social.ariaLabel}
-              className="text-muted-foreground hover:text-primary p-2 rounded-full hover:bg-primary/10"
+              className="text-gray-300 hover:text-white p-2 rounded-full hover:bg-gray-800"
             >
               <social.icon className="h-5 w-5" />
             </a>
           ))}
         </div> */}
 
-        <Separator className="mb-6" />
+        <Separator className="mb-6 bg-gray-800" />
 
         {/* Copyright */}
-        <div className="text-xs text-muted-foreground text-center">
+        <div className="text-xs text-gray-400 text-center">
           © {year} Cybergen Systems Inc. All rights reserved.
         </div>
       </div>

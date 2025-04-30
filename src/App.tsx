@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import ChatPage from "./pages/ChatPage";
 import NotFound from "./pages/NotFound";
 import AuthPage from "./pages/AuthPage";
+import UserProfile from "./pages/UserProfile";
 import ChatAssistantButton from "./components/ChatAssistantButton";
 import { ChatAssistantContext } from "./components/HeroSection";
 import { AuthProvider } from "./context/AuthContext";
@@ -50,6 +51,11 @@ const App = () => {
                 <Route path="/chat" element={
                   <ProtectedRoute>
                     <ChatPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/profile" element={
+                  <ProtectedRoute>
+                    <UserProfile />
                   </ProtectedRoute>
                 } />
                 <Route path="/auth" element={<AuthPage />} />
