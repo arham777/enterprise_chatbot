@@ -499,66 +499,8 @@ const ChatAssistantButton = () => {
     setActiveFileId(null);
     inputRef.current?.focus();
 
-    // If there are documents, ask the user to confirm deletion
-    if (hasPdfDocument) {
-      const confirmDeletion = window.confirm(
-        "Do you want to delete all uploaded documents? This action cannot be undone."
-      );
-      
-      if (confirmDeletion) {
-        deleteAllFiles();
-      }
-    }
-  };
-
-  // Function to delete all files from the backend
-  const deleteAllFiles = async () => {
-    // Check if user email is available
-    if (!userEmail) {
-      setChatHistory(prev => [...prev, { 
-        type: 'bot', 
-        text: 'Error: User email information is missing. Please sign out and sign in again.'
-      }]);
-      return;
-    }
-
-    try {
-      // Add email parameter to the endpoint
-      const deleteEndpoint = `${ORIGINAL_API_URL}/delete-all-files/?email=${encodeURIComponent(userEmail)}`;
-      
-      const response = await fetch(deleteEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Origin': window.location.origin,
-        },
-        mode: 'cors'
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete files: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      // Show success message
-      setChatHistory(prev => [...prev, { 
-        type: 'bot', 
-        text: `All documents have been successfully deleted.\n\n**Server response:** ${data.message}` 
-      }]);
-      
-      // Reset knowledge base after deletion
-      setUseKnowledgeBase(false);
-      
-    } catch (error) {
-      console.error('Error deleting files:', error);
-      
-      setChatHistory(prev => [...prev, { 
-        type: 'bot', 
-        text: `## Error\n\nFailed to delete documents.\n\n**Details:** ${error instanceof Error ? error.message : String(error)}` 
-      }]);
-    }
+    // Remove document deletion confirmation and API call
+    // We will never delete documents when just clearing chat
   };
 
   const toggleKnowledgeBase = async () => {
@@ -772,11 +714,11 @@ const ChatAssistantButton = () => {
         
         // Check if the response is an object with a message property (from FastAPI)
         if (data && typeof data === 'object' && data.message) {
-          responseText = `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.\n\n**Server response:** ${data.message}\n\n**Note:** Knowledge Base has been automatically activated to answer questions about this document.`;
+          responseText = `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.`;
         } else {
           responseText = typeof data === 'string' 
             ? data 
-            : `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.\n\n**Note:** Knowledge Base has been automatically activated to answer questions about this document.`;
+            : `## PDF Document Loaded Successfully\n\nI've loaded your PDF document **${file.name}**. You can now ask questions about this document.`;
         }
         
         // Automatically activate knowledge base when PDF is uploaded
