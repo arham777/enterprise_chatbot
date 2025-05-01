@@ -6,6 +6,8 @@ import { Separator } from './ui/separator';
 import { useChatAssistant } from './HeroSection';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import AlertDialog from './AlertDialog';
+import { useAlertDialog } from '@/hooks/useAlertDialog';
 
 // Get API URL from environment variables
 const API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
@@ -18,6 +20,7 @@ const DocumentSidebar = () => {
   const { setIsOpen: setChatOpen } = useChatAssistant();
   const { userEmail } = useAuth();
   const navigate = useNavigate();
+  const { isOpen: isAlertOpen, options: alertOptions, openAlert, closeAlert, confirm, alert } = useAlertDialog();
 
   const fetchDocuments = async () => {
     setIsLoading(true);
@@ -79,15 +82,12 @@ const DocumentSidebar = () => {
   }, [isOpen]);
 
   const deleteDocument = async (fileName: string) => {
-    if (!confirm(`Are you sure you want to delete "${fileName}"?`)) {
-      return;
-    }
-    
-    // Check if user email is available
-    if (!userEmail) {
-      alert('User email information is missing. Please sign out and sign in again.');
-      return;
-    }
+    confirm(`Are you sure you want to delete "${fileName}"?`, async () => {
+      // Check if user email is available
+      if (!userEmail) {
+        alert('User email information is missing. Please sign out and sign in again.');
+        return;
+      }
 
     try {
       // Add email parameter to the endpoint
@@ -112,6 +112,7 @@ const DocumentSidebar = () => {
       console.error('Error deleting document:', err);
       alert(`Error deleting document: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
+    })
   };
 
   const toggleSidebar = () => {
@@ -254,16 +255,13 @@ const DocumentSidebar = () => {
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={async () => {
-                      if (!confirm("Are you sure you want to delete ALL documents? This action cannot be undone.")) {
-                        return;
-                      }
-                      
-                      // Check if user email is available
-                      if (!userEmail) {
-                        alert('User email information is missing. Please sign out and sign in again.');
-                        return;
-                      }
+                    onClick={() => {
+                      confirm("Are you sure you want to delete ALL documents? This action cannot be undone.", async () => {
+                        // Check if user email is available
+                        if (!userEmail) {
+                          alert('User email information is missing. Please sign out and sign in again.');
+                          return;
+                        }
                       
                       try {
                         const response = await fetch(`${API_URL}/delete-all-files/?email=${encodeURIComponent(userEmail)}`, {
@@ -288,6 +286,7 @@ const DocumentSidebar = () => {
                         console.error('Error deleting all documents:', err);
                         alert(`Error deleting all documents: ${err instanceof Error ? err.message : 'Unknown error'}`);
                       }
+                      })
                     }}
                     className={`w-full mb-2 ${documents.filter(doc => doc !== "chat_history.csv").length === 0 ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200'}`}
                     disabled={documents.filter(doc => doc !== "chat_history.csv").length === 0}
@@ -339,6 +338,19 @@ const DocumentSidebar = () => {
           onClick={toggleSidebar}
         />
       )}
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        isOpen={isAlertOpen}
+        onClose={closeAlert}
+        title={alertOptions.title || ''}
+        message={alertOptions.message}
+        confirmLabel={alertOptions.confirmLabel}
+        cancelLabel={alertOptions.cancelLabel}
+        showCancel={alertOptions.showCancel}
+        variant={alertOptions.variant}
+        onConfirm={alertOptions.onConfirm}
+      />
     </>
   );
 };

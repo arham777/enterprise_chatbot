@@ -12,6 +12,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import AlertDialog from './AlertDialog';
+import { useAlertDialog } from '@/hooks/useAlertDialog';
 
 // Extended type for chat messages to support different content types
 type ChatMessageType = {
@@ -385,6 +387,7 @@ const ChatAssistantButton = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isResetting = useRef<boolean>(false);
   const { isAuthenticated, redirectToLogin, userEmail } = useAuth();
 
   // Define API base URL and CORS proxy functionality
@@ -392,9 +395,11 @@ const ChatAssistantButton = () => {
   
   // Function to fetch chat history for the user
   const fetchChatHistory = async (email: string) => {
-    if (!email) return;
+    // Don't try to load chat history if we've already attempted and failed
+    // or if we're in a reset process
+    if (historyLoadAttempted || isResetting.current) return;
     
-    // Set the flag to indicate we've attempted to load history
+    // Mark that we've attempted to load history, so we don't try again
     setHistoryLoadAttempted(true);
     setIsLoading(true);
     
@@ -671,56 +676,86 @@ const ChatAssistantButton = () => {
   };
 
   const resetChat = () => {
-    // Show a confirmation dialog before resetting chat
-    if (!confirm("Are you sure? This will delete your chat history")) {
-      return; // User cancelled the operation
-    }
+    if (chatHistory.length === 0 && message === '') return;
     
-    // Check if there's any PDF document in the chat history
-    const hasPdfDocument = chatHistory.some(
-      msg => msg.fileInfo?.fileType === 'PDF'
-    );
-    
-    // Delete the chat_history.csv file if user is authenticated
-    if (userEmail) {
-      // Make API call to delete the chat history file
-      try {
-        const deleteUrl = `${ORIGINAL_API_URL}/delete-file/?file_name=${encodeURIComponent("chat_history.csv")}&email=${encodeURIComponent(userEmail)}`;
+    openAlert({
+      title: 'Confirm Reset',
+      message: 'Are you sure you want to reset the chat? This will clear all messages.',
+      confirmLabel: 'Reset',
+      cancelLabel: 'Cancel',
+      showCancel: true,
+      variant: 'warning',
+      onConfirm: () => {
+        // Set resetting flag to prevent immediate refetch of chat history
+        isResetting.current = true;
         
-        fetch(deleteUrl, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json'
-          },
-          mode: 'cors'
-        }).then(response => {
-          if (!response.ok) {
-            console.error('Failed to delete chat history file:', response.status);
-          } else {
-            console.log('Chat history file deleted successfully');
+        // Check if there's any PDF document in the chat history
+        const hasPdfDocument = chatHistory.some(
+          msg => msg.fileInfo?.fileType === 'PDF'
+        );
+        
+        // Delete the chat_history.csv file if user is authenticated
+        if (userEmail) {
+          // Make API call to delete the chat history file
+          try {
+            const deleteUrl = `${ORIGINAL_API_URL}/delete-file/?file_name=${encodeURIComponent("chat_history.csv")}&email=${encodeURIComponent(userEmail)}`;
+            
+            fetch(deleteUrl, {
+              method: 'POST',
+              headers: {
+                'Accept': 'application/json'
+              },
+              mode: 'cors'
+            }).then(response => {
+              if (!response.ok) {
+                console.error('Failed to delete chat history file:', response.status);
+              } else {
+                console.log('Chat history file deleted successfully');
+              }
+              // Reset the flag after the request completes (success or failure)
+              setTimeout(() => {
+                isResetting.current = false;
+              }, 1000);
+            }).catch(err => {
+              console.error('Error deleting chat history file:', err);
+              // Reset the flag after the request fails
+              setTimeout(() => {
+                isResetting.current = false;
+              }, 1000);
+            });
+          } catch (err) {
+            console.error('Error initiating delete request:', err);
+            // Reset the flag after any error
+            setTimeout(() => {
+              isResetting.current = false;
+            }, 1000);
           }
-        }).catch(err => {
-          console.error('Error deleting chat history file:', err);
-        });
-      } catch (err) {
-        console.error('Error initiating delete request:', err);
+        } else {
+          // If no user email, reset the flag after a short delay
+          setTimeout(() => {
+            isResetting.current = false;
+          }, 1000);
+        }
+        
+        // Clear chat history and reset state
+        setChatHistory([]);
+        setMessage('');
+        
+        // Reset history load attempted flag so we can try loading history again
+        setHistoryLoadAttempted(false);
+        
+        // Only reset knowledge base if there's no PDF document
+        if (!hasPdfDocument) {
+          setUseKnowledgeBase(false);
+        }
+        
+        // Reset active file ID
+        setActiveFileId(null);
+        
+        // Focus input element
+        inputRef.current?.focus();
       }
-    }
-    
-    // Clear chat history
-    setChatHistory([]);
-    setMessage('');
-    
-    // Reset history load attempted flag so we can try loading history again
-    setHistoryLoadAttempted(false);
-    
-    // Only reset knowledge base if there's no PDF document
-    if (!hasPdfDocument) {
-      setUseKnowledgeBase(false);
-    }
-    
-    setActiveFileId(null);
-    inputRef.current?.focus();
+    });
   };
 
   // Helper function to update knowledge base state on the backend
@@ -1341,6 +1376,8 @@ const ChatAssistantButton = () => {
     };
   }, []);
 
+  const { isOpen: isAlertOpen, options: alertOptions, openAlert, closeAlert, confirm, alert } = useAlertDialog();
+
   return (
     <>
       {/* Hidden file input */}
@@ -1546,6 +1583,19 @@ const ChatAssistantButton = () => {
           </Button>
         </motion.div>
       )}
+      
+      {/* Alert Dialog */}
+      <AlertDialog
+        isOpen={isAlertOpen}
+        onClose={closeAlert}
+        title={alertOptions.title}
+        message={alertOptions.message}
+        confirmLabel={alertOptions.confirmLabel}
+        cancelLabel={alertOptions.cancelLabel}
+        showCancel={alertOptions.showCancel}
+        variant={alertOptions.variant}
+        onConfirm={alertOptions.onConfirm}
+      />
     </>
   );
 };
