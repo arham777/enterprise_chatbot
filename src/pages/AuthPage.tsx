@@ -92,12 +92,45 @@ const AuthPage = () => {
       }
       
       const data = await response.json();
-      console.log("AUTH PAGE: Sign-in response received:", !!data);
+      console.log("AUTH PAGE: Sign-in response received:", data);
       console.log("AUTH PAGE: Token in response:", !!data.token);
+      console.log("AUTH PAGE: User info in response:", data.user);
       
       // Use auth context to log in
       if (data.message === "Login successful.") {
-        login(signinEmail); // Pass the email to the login function
+        // Try multiple paths where the name might be in the response
+        let userName = null;
+        
+        // Try all possible locations where the name might be in the response
+        if (data.user?.name) {
+          userName = data.user.name;
+          console.log("AUTH PAGE: Found name in data.user.name:", userName);
+        } else if (data.name) {
+          userName = data.name;
+          console.log("AUTH PAGE: Found name in data.name:", userName);
+        } else if (data.user?.fullName) {
+          userName = data.user.fullName;
+          console.log("AUTH PAGE: Found name in data.user.fullName:", userName);
+        } else if (data.userData?.name) {
+          userName = data.userData.name;
+          console.log("AUTH PAGE: Found name in data.userData.name:", userName);
+        } else {
+          // If we can't find the name, try to get it from localStorage (saved during signup)
+          userName = localStorage.getItem('userName');
+          if (userName) {
+            console.log("AUTH PAGE: Using name from localStorage:", userName);
+          } else {
+            // Last resort: extract from email
+            userName = signinEmail.split('@')[0]
+              .replace(/[.\-_]/g, ' ')
+              .split(' ')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ');
+            console.log("AUTH PAGE: Derived name from email:", userName);
+          }
+        }
+        
+        login(signinEmail, userName); // Pass both email and name to the login function
         console.log("AUTH PAGE: Login successful with email:", signinEmail);
         
         toast({
@@ -181,11 +214,35 @@ const AuthPage = () => {
         throw new Error(errorData.message || 'Registration failed');
       }
       
+      const data = await response.json();
+      console.log("AUTH PAGE: Sign-up response received:", data);
+      
+      // Log detailed information about what's in the response
+      console.log("AUTH PAGE: User data in sign-up response:", data.user || 'No user field');
+      
+      // Get the name from the API response if available, otherwise use the name from the form
+      let userName = signupName;
+      
+      // Check if the API response includes the user's name in any format
+      if (data.user && data.user.name) {
+        userName = data.user.name;
+        console.log("AUTH PAGE: Using name from API response:", userName);
+      } else if (data.name) {
+        userName = data.name;
+        console.log("AUTH PAGE: Using name from API data.name:", userName);
+      }
+      
+      // Store user name in localStorage so it's available after they sign in
+      localStorage.setItem('userName', userName);
+      
       toast({
         title: "Account created!",
         description: "Your account has been successfully created."
       });
       setActiveTab('signin');
+      
+      // Pre-fill the signin email field to make it easier for the user
+      setSigninEmail(signupEmail);
     } catch (error) {
       console.error('Registration error:', error);
       

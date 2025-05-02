@@ -3,19 +3,20 @@ import { useNavigate } from 'react-router-dom';
 
 // Define action types
 type AuthAction = 
-  | { type: 'LOGIN'; email: string }
+  | { type: 'LOGIN'; email: string; name?: string }
   | { type: 'LOGOUT' }
-  | { type: 'RESTORE_AUTH'; isAuthenticated: boolean; email: string | null };
+  | { type: 'RESTORE_AUTH'; isAuthenticated: boolean; email: string | null; name?: string | null };
 
 // Define state type
 type AuthState = {
   isAuthenticated: boolean;
   userEmail: string | null;
+  userName: string | null;
 };
 
 // Define context type
 type AuthContextType = AuthState & {
-  login: (email: string) => void;
+  login: (email: string, name?: string) => void;
   logout: () => void;
   redirectToLogin: () => void;
 };
@@ -23,7 +24,8 @@ type AuthContextType = AuthState & {
 // Initial state
 const initialState: AuthState = {
   isAuthenticated: false,
-  userEmail: null
+  userEmail: null,
+  userName: null
 };
 
 // Create reducer function
@@ -32,17 +34,20 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
     case 'LOGIN':
       return {
         isAuthenticated: true,
-        userEmail: action.email
+        userEmail: action.email,
+        userName: action.name || state.userName
       };
     case 'LOGOUT':
       return {
         isAuthenticated: false,
-        userEmail: null
+        userEmail: null,
+        userName: null
       };
     case 'RESTORE_AUTH':
       return {
         isAuthenticated: action.isAuthenticated,
-        userEmail: action.email
+        userEmail: action.email,
+        userName: action.name
       };
     default:
       return state;
@@ -60,9 +65,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
     const userEmail = localStorage.getItem('userEmail');
+    const userName = localStorage.getItem('userName');
     console.log('AUTH PROVIDER: Checking existing auth state:', isAuthenticated);
     console.log('AUTH PROVIDER: User email:', userEmail);
-    dispatch({ type: 'RESTORE_AUTH', isAuthenticated, email: userEmail });
+    console.log('AUTH PROVIDER: User name:', userName);
+    dispatch({ type: 'RESTORE_AUTH', isAuthenticated, email: userEmail, name: userName });
   }, []);
 
   // Log state changes for debugging
@@ -70,17 +77,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     console.log('AUTH STATE CHANGED:', state);
   }, [state]);
 
-  const login = (email: string) => {
-    console.log('AUTH PROVIDER: Login called with email:', email);
+  const login = (email: string, name?: string) => {
+    console.log('AUTH PROVIDER: Login called with email:', email, 'and name:', name);
     localStorage.setItem('isAuthenticated', 'true');
     localStorage.setItem('userEmail', email);
-    dispatch({ type: 'LOGIN', email });
+    if (name) {
+      localStorage.setItem('userName', name);
+    }
+    dispatch({ type: 'LOGIN', email, name });
   };
 
   const logout = () => {
     console.log('AUTH PROVIDER: Logout called');
     localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('userEmail');
+    localStorage.removeItem('userName');
     dispatch({ type: 'LOGOUT' });
     navigate('/auth');
   };
@@ -110,4 +121,4 @@ export const useAuth = (): AuthContextType => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};
