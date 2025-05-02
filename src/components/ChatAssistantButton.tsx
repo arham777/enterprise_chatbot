@@ -236,27 +236,6 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
             </div>
           )}
           
-          {/* Source document info for bot messages */}
-          {!isUser && (
-            <div className="flex items-center gap-2 p-2 bg-secondary/30 rounded mb-3">
-              {!message.sourceDocument || message.sourceDocument === "N/A" ? (
-                <>
-                  <Globe className="h-4 w-4 text-primary" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">web search</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <FileText className="h-4 w-4 text-primary" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Source: {message.sourceDocument}</p>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          
           {/* Text content with streaming effect for bot messages */}
           {isUser ? (
             <p className="leading-relaxed whitespace-pre-wrap">{message.text}</p>
@@ -279,6 +258,27 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
             </div>
           )}
 
+          {/* Source document info for bot messages - moved to bottom */}
+          {!isUser && !message.isStreaming && !message.loadingIndicator && (
+            <div className="flex items-center gap-2 p-2 bg-secondary/30 rounded mt-3">
+              {!message.sourceDocument || message.sourceDocument === "N/A" ? (
+                <>
+                  <Globe className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">web search</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <FileText className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Source: {message.sourceDocument}</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Suggested questions */}
           {!isUser && !message.isStreaming && !message.loadingIndicator && message.suggestedQuestions && Array.isArray(message.suggestedQuestions) && message.suggestedQuestions.length > 0 && showSuggestedQuestions && (
             <div className="mt-4 pt-3 border-t border-border">
@@ -292,14 +292,24 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
                 </button>
               </div>
               <div className="flex flex-col gap-1.5">
-                {message.suggestedQuestions.map((question, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleSuggestedQuestionClick(question)}
-                    className="text-left text-xs py-1.5 px-2.5 rounded bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
-                  >
-                    {question}
-                  </button>
+                {message.suggestedQuestions
+                  .flatMap(question => {
+                    // Check if the question contains commas, which might indicate multiple questions
+                    if (question.includes(',')) {
+                      // Split by comma and trim whitespace from each question
+                      return question.split(',').map(q => q.trim()).filter(q => q.length > 0);
+                    }
+                    // Return as a single item array if no commas
+                    return [question];
+                  })
+                  .map((question, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleSuggestedQuestionClick(question)}
+                      className="text-left text-xs py-1.5 px-2.5 rounded bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+                    >
+                      {question}
+                    </button>
                 ))}
               </div>
             </div>
@@ -377,8 +387,17 @@ const ChatAssistantButton = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [message, setMessage] = useState('');
-  // Ensure knowledge base is disabled by default
-  const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
+  // Initialize knowledge base state from localStorage if available, default to false
+  const [useKnowledgeBase, setUseKnowledgeBase] = useState(() => {
+    try {
+      // Only use saved state if user is authenticated
+      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
+      const savedState = localStorage.getItem('useKnowledgeBase');
+      return isAuthenticatedUser && savedState === 'true';
+    } catch (e) {
+      return false; // Default to false if localStorage access fails
+    }
+  });
   // Initialize with empty array first, we'll load from sessionStorage in useEffect
   const [chatHistory, setChatHistory] = useState<ChatMessageType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -391,7 +410,7 @@ const ChatAssistantButton = () => {
   const isResetting = useRef<boolean>(false);
   const sessionId = useRef<string>(localStorage.getItem('sessionId') || `session_${Date.now()}`);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
-  const { isAuthenticated, redirectToLogin, userEmail } = useAuth();
+  const { isAuthenticated, redirectToLogin, userEmail, userName } = useAuth();
 
   // Define API base URL and CORS proxy functionality
   const ORIGINAL_API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
@@ -559,23 +578,43 @@ const ChatAssistantButton = () => {
   // Determine the API URL to use (with proxy if needed)
   const API_BASE_URL = createProxiedUrl(ORIGINAL_API_URL);
 
+  // Check if mobile device
+  const checkIfMobile = () => {
+    return window.innerWidth < 768;
+  };
+  
+  // Initialize mobile detection
   useEffect(() => {
-    const checkIfMobile = () => {
-      const mobile = window.innerWidth < 768;
+    const handleResize = () => {
+      const mobile = checkIfMobile();
       setIsMobile(mobile);
       // Only reset maximized state when going from desktop to mobile
-      // not every time this effect runs
       if (mobile && isMaximized) {
         setIsMaximized(false);
       }
     };
     
     // Check on mount and add resize listener
-    checkIfMobile();
-    window.addEventListener('resize', checkIfMobile);
-    
-    return () => window.removeEventListener('resize', checkIfMobile);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [isMaximized]);
+
+  // Watch for authentication state changes and deactivate knowledge base when signed out
+  useEffect(() => {
+    // If user is not authenticated, deactivate the knowledge base
+    if (!isAuthenticated) {
+      setUseKnowledgeBase(false);
+      localStorage.removeItem('useKnowledgeBase'); // Remove from localStorage
+      
+      // If we have access to the backend, also update it there
+      if (userEmail) {
+        updateKnowledgeBaseState(false).catch(error => {
+          console.error('Failed to deactivate knowledge base on sign out:', error);
+        });
+      }
+    }
+  }, [isAuthenticated, userEmail]);
 
   // Effect to save chat history to session storage whenever it changes
   useEffect(() => {
@@ -854,6 +893,13 @@ const ChatAssistantButton = () => {
       return;
     }
     
+    // Persist the knowledge base state in localStorage to maintain state across sessions
+    try {
+      localStorage.setItem('useKnowledgeBase', newState ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to save knowledge base state to localStorage', e);
+    }
+    
     // Update the backend with the new state
     await updateKnowledgeBaseState(newState);
   };
@@ -1014,19 +1060,9 @@ const ChatAssistantButton = () => {
           // Try to parse as JSON
           data = JSON.parse(text);
           
-          // Automatically enable knowledge base if it's not already enabled
-          if (!useKnowledgeBase) {
-            setUseKnowledgeBase(true);
-            
-            // Use the helper function to properly update knowledge base state on the backend
-            const result = await updateKnowledgeBaseState(true);
-            if (result) {
-              console.log('Knowledge base automatically activated after document upload');
-            } else {
-              console.error('Failed to automatically activate knowledge base after upload');
-              // Continue processing even if knowledge base activation fails
-            }
-          }
+          // Automatically enable knowledge base when a PDF is uploaded
+          // We won't check current state because we want to ensure it's definitely on
+          setUseKnowledgeBase(true);
         } catch (e) {
           // If not JSON, use text directly
           data = text;
@@ -1044,32 +1080,15 @@ const ChatAssistantButton = () => {
             : `The **${file.name}** has been uploaded successfully. You can ask any questions related to this document.`;
         }
         
-        // Automatically activate knowledge base when PDF is uploaded
-        setUseKnowledgeBase(true);
-        
-        // Call the knowledge base endpoint to activate it
+        // Use the dedicated function to properly update knowledge base state on the backend
+        // This ensures consistent behavior between manual activation and file-upload activation
         try {
-          const knowledgeBaseEndpoint = `${ORIGINAL_API_URL}/set-knowledge-base/`;
-          
-          const kbResponse = await fetch(knowledgeBaseEndpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Origin': window.location.origin,
-            },
-            body: JSON.stringify({
-              activate: true,
-              email: userEmail
-            }),
-            mode: 'cors'
-          });
-          
-          if (!kbResponse.ok) {
-            console.error(`Failed to activate knowledge base: ${kbResponse.status}`);
+          const result = await updateKnowledgeBaseState(true);
+          if (result) {
+            console.log('Knowledge base activated after document upload');
           } else {
-            const kbData = await kbResponse.json();
-            console.log("Knowledge base activated: ", kbData);
+            console.error('Failed to activate knowledge base after document upload');
+            // Continue processing even if knowledge base activation fails
           }
         } catch (kbError) {
           console.error('Error activating knowledge base:', kbError);
@@ -1133,6 +1152,45 @@ const ChatAssistantButton = () => {
     }
     
     return true;
+  };
+
+  // Function to check if a message is a greeting
+  const isGreeting = (message: string): boolean => {
+    const greetingPatterns = [
+      /^hi$/i,
+      /^hello$/i,
+      /^hey$/i,
+      /^howdy$/i,
+      /^greetings$/i,
+      /^hi there$/i,
+      /^hello there$/i,
+      /^good morning$/i,
+      /^good afternoon$/i,
+      /^good evening$/i
+    ];
+    
+    return greetingPatterns.some(pattern => pattern.test(message.trim()));
+  };
+
+  // Function to get user's name from auth context or fallback to a friendly greeting
+  const getUserName = (): string => {
+    // First try to get the name from auth context
+    if (userName) {
+      return userName;
+    }
+    
+    // Fall back to the first part of the email if we have it
+    if (userEmail) {
+      const namePart = userEmail.split('@')[0];
+      return namePart
+        .replace(/[.\-_]/g, ' ') // Replace common email separators with spaces
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    }
+    
+    // Last resort
+    return 'there';
   };
 
   const sendMessage = async () => {
@@ -1210,7 +1268,13 @@ const ChatAssistantButton = () => {
         const data = await response.json();
         
         // Extract the response text from the data object
-        const responseText = data.response || 'No response received';
+        let responseText = data.response || 'No response received';
+        
+        // If the message was a greeting, personalize the response with the user's name
+        if (isGreeting(trimmedMessage)) {
+          const userName = getUserName();
+          responseText = `Hello ${userName}! 👋 How can I assist you today?`;
+        }
 
         // Log source document information if available
         if (data.source_document) {
@@ -1274,7 +1338,13 @@ const ChatAssistantButton = () => {
           }
           
           const fallbackData = await fallbackResponse.json();
-          const fallbackText = fallbackData.response || 'No response received';
+          let fallbackText = fallbackData.response || 'No response received';
+          
+          // Also personalize the fallback response if it was a greeting
+          if (isGreeting(trimmedMessage)) {
+            const userName = getUserName();
+            fallbackText = `Hello ${userName}! 👋 How can I assist you today?`;
+          }
           
           // Log source document information if available in fallback response
           if (fallbackData.source_document) {
@@ -1559,16 +1629,6 @@ const ChatAssistantButton = () => {
 
             {/* Footer / Input Area */}
             <CardFooter className="p-3 border-t bg-card flex-shrink-0">
-                {useKnowledgeBase && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0}}
-                        className="mb-2 text-xs text-primary flex items-center gap-1 justify-center"
-                    >
-                        <Database className="h-3 w-3"/> Knowledge Base Active
-                    </motion.div>
-                )}
               <div className="flex items-center gap-2 w-full">
                 <Button 
                   variant="ghost" 
@@ -1585,8 +1645,8 @@ const ChatAssistantButton = () => {
                     size="icon"
                     onClick={toggleKnowledgeBase}
                     className={cn(
-                    "h-8 w-8 flex-shrink-0 hover:text-primary",
-                    useKnowledgeBase ? "text-primary bg-primary/10" : "text-muted-foreground"
+                    "h-8 w-8 flex-shrink-0 hover:text-primary relative",
+                    useKnowledgeBase ? "text-primary bg-primary/20 ring-1 ring-primary" : "text-muted-foreground"
                     )}
                     aria-label={useKnowledgeBase ? "Deactivate knowledge base" : "Activate knowledge base"}
                     title={useKnowledgeBase ? "Knowledge base active" : "Activate knowledge base"}

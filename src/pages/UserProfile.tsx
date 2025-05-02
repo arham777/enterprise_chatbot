@@ -14,16 +14,22 @@ import { Separator } from '@/components/ui/separator'; // Added for visual separ
 import { useNavigate } from 'react-router-dom';
 
 const UserProfile = () => {
-  const { userEmail, logout } = useAuth();
+  const { userEmail, userName, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Helper to extract a display name (can be customized further if needed)
-  const getDisplayName = (email: string | null): string => {
-    if (!email) return 'User';
-    // Simple extraction, could be replaced with a dedicated 'displayName' field if available
-    const namePart = email.split('@')[0];
-    // Capitalize first letter
-    return namePart.charAt(0).toUpperCase() + namePart.slice(1);
+  // Get display name from auth context, fallback to email-derived name if not available
+  const getDisplayName = (): string => {
+    if (userName) return userName;
+    if (!userEmail) return 'User';
+    
+    // Fallback to email-derived name if no actual name is available
+    const namePart = userEmail.split('@')[0];
+    // Capitalize first letter and make more readable
+    return namePart
+      .replace(/[.\-_]/g, ' ')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
   };
 
   // Helper for avatar initials
@@ -72,7 +78,7 @@ const UserProfile = () => {
             </AvatarFallback>
           </Avatar>
           <CardTitle className="text-xl font-medium">
-            {getDisplayName(userEmail)}
+            {getDisplayName()}
           </CardTitle>
           {/* Optional: Can show the full email subtly here if desired */}
           <CardDescription>
