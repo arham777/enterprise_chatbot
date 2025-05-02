@@ -379,15 +379,18 @@ const ChatAssistantButton = () => {
   const [message, setMessage] = useState('');
   // Ensure knowledge base is disabled by default
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
+  // Initialize with empty array first, we'll load from sessionStorage in useEffect
   const [chatHistory, setChatHistory] = useState<ChatMessageType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   // Track if we've already attempted to load chat history
   const [historyLoadAttempted, setHistoryLoadAttempted] = useState(false);
-  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  // Use some refs to keep track of state that shouldn't cause re-renders
   const inputRef = useRef<HTMLInputElement>(null);
-  const chatBodyRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatBodyRef = useRef<HTMLDivElement>(null);
   const isResetting = useRef<boolean>(false);
+  const sessionId = useRef<string>(localStorage.getItem('sessionId') || `session_${Date.now()}`);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const { isAuthenticated, redirectToLogin, userEmail } = useAuth();
 
   // Define API base URL and CORS proxy functionality
@@ -395,12 +398,13 @@ const ChatAssistantButton = () => {
   
   // Function to fetch chat history for the user
   const fetchChatHistory = async (email: string) => {
-    // Don't try to load chat history if we've already attempted and failed
-    // or if we're in a reset process
-    if (historyLoadAttempted || isResetting.current) return;
+    // Don't try to load chat history if we're in a reset process
+    if (isResetting.current) return;
     
     // Mark that we've attempted to load history, so we don't try again
     setHistoryLoadAttempted(true);
+    // Store this attempt in sessionStorage for this specific user
+    sessionStorage.setItem(`historyLoadAttempted_${email}`, 'true');
     setIsLoading(true);
     
     try {
@@ -494,6 +498,9 @@ const ChatAssistantButton = () => {
       // Success! Update the chat history
       setChatHistory(formattedHistory);
       console.log(`Chat history loaded successfully: ${formattedHistory.length} messages`);
+      
+      // Ensure we scroll to the bottom to show the most recent message
+      setTimeout(scrollToBottom, 200);
     } catch (error) {
       // Catch any other errors we didn't anticipate
       console.log('The chat history is empty - could not process data');
@@ -538,19 +545,15 @@ const ChatAssistantButton = () => {
     // Check if we're in development environment
     const isDevelopment = process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost';
     
-    if (isDevelopment) {
-      // ThingProxy is failing with 500 errors, try direct connection instead
-      // If direct connection works, no proxy is needed
-      return url;
-      
-      // Alternative options if direct connection doesn't work:
-      // return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-      // return `https://cors-anywhere.herokuapp.com/${url}`;
-      // return `https://proxy.cors.sh/${url}`;
-    }
-    
-    // In production, use the direct URL (assuming same-origin or proper CORS setup)
+    // ThingProxy is failing with 500 errors, try direct connection instead
+    // Simplified to always return direct URL regardless of environment
+    // If direct connection works, no proxy is needed
     return url;
+    
+    // Alternative options if direct connection doesn't work:
+    // return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    // return `https://cors-anywhere.herokuapp.com/${url}`;
+    // return `https://proxy.cors.sh/${url}`;
   };
   
   // Determine the API URL to use (with proxy if needed)
@@ -566,104 +569,140 @@ const ChatAssistantButton = () => {
         setIsMaximized(false);
       }
     };
+    
+    // Check on mount and add resize listener
     checkIfMobile();
     window.addEventListener('resize', checkIfMobile);
+    
     return () => window.removeEventListener('resize', checkIfMobile);
   }, [isMaximized]);
 
-  // Listen for document selection messages from DocumentSidebar
+  // Effect to save chat history to session storage whenever it changes
   useEffect(() => {
-    const handleDocumentSelection = (event: MessageEvent) => {
-      if (
-        event.origin === window.location.origin && 
-        event.data?.type === 'SELECT_DOCUMENT' &&
-        event.data?.payload?.documentName
-      ) {
-        const documentName = event.data.payload.documentName;
-        
-        // Activate knowledge base
-        setUseKnowledgeBase(true);
-        
-        // Add a message about the selected document
-        setChatHistory(prev => [...prev, { 
-          type: 'user', 
-          text: `I want to discuss the document: ${documentName}` 
-        }]);
-        
-        // Add bot response
-        setChatHistory(prev => [...prev, { 
-          type: 'bot', 
-          text: `I've loaded the document **${documentName}**. The Knowledge Base is now active. What would you like to know about this document?`,
-          fileInfo: {
-            filename: documentName,
-            fileType: 'PDF'
-          }
-        }]);
-      }
-    };
-    
-    window.addEventListener('message', handleDocumentSelection);
-    return () => window.removeEventListener('message', handleDocumentSelection);
-  }, []);
-
-  // Show a log message about the API URL being used (helpful for debugging)
-  useEffect(() => {
-    const isDevelopment = process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost';
-    if (isDevelopment) {
-      console.info(`Using API URL: ${API_BASE_URL} ${API_BASE_URL !== ORIGINAL_API_URL ? '(with CORS proxy)' : ''}`);
+    if (chatHistory.length > 0 && isAuthenticated && userEmail) {
+      // Save chat history to user-specific session storage for persistence
+      sessionStorage.setItem(`chatHistory_${userEmail}`, JSON.stringify(chatHistory));
     }
-    
-    // Cleanup function to clear chat history when component unmounts
-    return () => {
-      setChatHistory([]);
-    };
-  }, [API_BASE_URL]);
-  
-  // Load user-specific chat history when component mounts or when user opens the chat
-  useEffect(() => {
-    // Only attempt to load chat history if:
-    // 1. Chat is open
-    // 2. We have a user email
-    // 3. Chat history is empty
-    // 4. We haven't already tried loading history during this session
-    // 5. We're not currently loading something else
-    if (isOpen && userEmail && chatHistory.length === 0 && !historyLoadAttempted && !isLoading) {
-      console.log('Attempting to load chat history for user:', userEmail);
-      fetchChatHistory(userEmail);
-    }
-  }, [isOpen, userEmail, chatHistory.length, historyLoadAttempted, isLoading]);
+  }, [chatHistory, isAuthenticated, userEmail]);
 
-  // Clear chat history when the chat is closed
+  // Handle chat open/close without clearing history
   useEffect(() => {
     if (isOpen && inputRef.current) {
+      // Focus input when chat opens
       setTimeout(() => inputRef.current?.focus(), 300);
     }
-    
-    if (!isOpen) {
-      // Reset chat history when chat is closed
-      setChatHistory([]);
-      // Also reset the history load attempted flag so we start fresh next time
-      setHistoryLoadAttempted(false);
-    }
+    // No longer clearing chat history when chat is closed
+    // This allows chat to persist between sessions
   }, [isOpen]);
 
+  // Handle escape key press
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
       if (isOpen && event.key === 'Escape') {
         setIsOpen(false);
-        // Reset chat history when closed with Escape key
-        setChatHistory([]);
+        // No longer clearing chat history on close
+        // This allows chat to persist between sessions
       }
     };
     window.addEventListener('keydown', handleEscKey);
     return () => window.removeEventListener('keydown', handleEscKey);
   }, [isOpen, setIsOpen]);
+  
+  // Effect to load chat history from sessionStorage when auth data is available
+  useEffect(() => {
+    if (isAuthenticated && userEmail) {
+      // Check if we have a cached history for this user
+      const savedHistory = sessionStorage.getItem(`chatHistory_${userEmail}`);
+      if (savedHistory) {
+        try {
+          const parsedHistory = JSON.parse(savedHistory);
+          if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
+            // Load chat history from sessionStorage
+            setChatHistory(parsedHistory);
+            // Mark history as loaded since we found it in sessionStorage
+            setHistoryLoadAttempted(true);
+            console.log('Loaded chat history from sessionStorage for user:', userEmail);
+            // Ensure we scroll to the bottom to show the most recent message
+            setTimeout(scrollToBottom, 200);
+          } else {
+            // If cached history exists but is empty, attempt to load from backend
+            setHistoryLoadAttempted(false);
+          }
+        } catch (error) {
+          console.error('Error parsing chat history from sessionStorage:', error);
+          // Invalid cache, clear it
+          sessionStorage.removeItem(`chatHistory_${userEmail}`);
+          setHistoryLoadAttempted(false);
+        }
+      } else {
+        // No cached history, will attempt to load from backend
+        // historyLoadAttempted flag is already false by default
+        console.log('No cached chat history found for user:', userEmail);
+      }
+    } else if (!isAuthenticated) {
+      // Clear chat history when logged out
+      setChatHistory([]);
+      setHistoryLoadAttempted(false);
+    }
+  }, [isAuthenticated, userEmail]);
+
+  // Scroll to the bottom whenever chatHistory changes or when the chat is opened
+  useEffect(() => {
+    // Use setTimeout to ensure this runs after the DOM has been updated
+    setTimeout(() => {
+      if (chatBodyRef.current) {
+        chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
+        console.log('Scrolled to bottom of chat');
+      }
+    }, 100);
+  }, [chatHistory, isOpen]);
+  
+  // Also scroll to bottom when chat is first loaded with existing messages
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      if (chatBodyRef.current) {
+        chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
+      }
+    }, 100);
+  };
 
   useEffect(() => {
-    if (chatBodyRef.current) {
-      chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
+    // Save session ID to localStorage on first load
+    if (!localStorage.getItem('sessionId')) {
+      localStorage.setItem('sessionId', sessionId.current);
     }
-  }, [chatHistory]);
+
+    // Check for URL params that should activate the chat
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('openChat') === 'true') {
+      setIsOpen(true);
+      // Remove the param so refreshing doesn't re-open
+      const newUrl = `${window.location.pathname}${window.location.hash}`;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+
+  // Load user-specific chat history when component mounts or when user opens the chat
+  useEffect(() => {
+    // Reset history load attempted flag when user changes
+    if (userEmail) {
+      const hasAttemptedForCurrentUser = sessionStorage.getItem(`historyLoadAttempted_${userEmail}`) === 'true';
+      setHistoryLoadAttempted(hasAttemptedForCurrentUser);
+    }
+    
+    // Only attempt to load chat history if:
+    // 1. Chat is open
+    // 2. We have a user email
+    // 3. Chat history is empty or user has just logged in
+    // 4. We haven't already tried loading history for this user
+    // 5. We're not currently loading something else
+    if (isOpen && userEmail && chatHistory.length === 0 && !historyLoadAttempted && !isLoading) {
+      console.log('Attempting to load chat history for user:', userEmail);
+      // Mark that we've attempted to load history for this user
+      sessionStorage.setItem(`historyLoadAttempted_${userEmail}`, 'true');
+      fetchChatHistory(userEmail);
+    }
+  }, [isOpen, userEmail, chatHistory.length, historyLoadAttempted, isLoading]);
 
   const toggleChat = () => setIsOpen(!isOpen);
   const toggleMaximize = () => {
@@ -1369,14 +1408,47 @@ const ChatAssistantButton = () => {
       setMessage(question);
     };
 
+    const handleDocumentUploaded = (event: CustomEvent) => {
+      const { fileName } = event.detail;
+      
+      // Open the chatbot
+      setIsOpen(true);
+      
+      // Activate knowledge base
+      setUseKnowledgeBase(true);
+      
+      // Create a success message with the same format as in handleFileUpload
+      const successMessage = `PDF document **${fileName}** has been uploaded successfully.\n\nThe knowledge base has been automatically activated. You can now ask questions about your document content.`;
+      
+      // Add the message to chat history
+      setChatHistory(prev => [...prev, { 
+        type: 'user', 
+        text: `I'd like to analyze this PDF document: ${fileName}`
+      }]);
+      
+      // Add the success response message
+      setChatHistory(prev => [...prev, { 
+        type: 'bot',
+        text: successMessage,
+        fileInfo: {
+          filename: fileName,
+          fileType: 'PDF',
+        }
+      }]);
+    };
+    
     window.addEventListener('suggested-question-click', handleSuggestedQuestionClick as EventListener);
+    window.addEventListener('document-uploaded', handleDocumentUploaded as EventListener);
     
     return () => {
       window.removeEventListener('suggested-question-click', handleSuggestedQuestionClick as EventListener);
+      window.removeEventListener('document-uploaded', handleDocumentUploaded as EventListener);
     };
   }, []);
 
   const { isOpen: isAlertOpen, options: alertOptions, openAlert, closeAlert, confirm, alert } = useAlertDialog();
+
+  // This was moved up in the component to avoid duplication
 
   return (
     <>
@@ -1598,6 +1670,20 @@ const ChatAssistantButton = () => {
       />
     </>
   );
+};
+
+// Export a function to add file upload messages to chat history
+export const addDocumentUploadMessage = (fileName: string) => {
+  // Create event with details about the uploaded document
+  const event = new CustomEvent('document-uploaded', {
+    detail: {
+      fileName: fileName,
+      timestamp: new Date().toISOString()
+    }
+  });
+  
+  // Dispatch the event to be handled by the ChatAssistantButton component
+  window.dispatchEvent(event);
 };
 
 export default ChatAssistantButton;

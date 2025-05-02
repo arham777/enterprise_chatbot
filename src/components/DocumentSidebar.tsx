@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileText, X, Trash2, RefreshCw, LogIn } from 'lucide-react';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { useChatAssistant } from './HeroSection';
+import { addDocumentUploadMessage } from './ChatAssistantButton';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import AlertDialog from './AlertDialog';
@@ -11,6 +12,8 @@ import { useAlertDialog } from '@/hooks/useAlertDialog';
 
 // Get API URL from environment variables
 const API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
+
+// No need for declare module anymore as we're using the properly exported function
 
 const DocumentSidebar = () => {
   const [documents, setDocuments] = useState<string[]>([]);
@@ -21,6 +24,7 @@ const DocumentSidebar = () => {
   const { userEmail } = useAuth();
   const navigate = useNavigate();
   const { isOpen: isAlertOpen, options: alertOptions, openAlert, closeAlert, confirm, alert } = useAlertDialog();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDocuments = async () => {
     setIsLoading(true);
@@ -136,6 +140,106 @@ const DocumentSidebar = () => {
     
     // Close the sidebar after selecting a document
     setIsOpen(false);
+  };
+
+  // Function to trigger the file input dialog
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Function to handle file upload
+  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check if user is authenticated and email is available
+    if (!userEmail) {
+      alert('User email information is missing. Please sign out and sign in again.');
+      return;
+    }
+
+    // Check if file is PDF - only allow PDF files as endpoint can only handle PDFs
+    const isPDF = file.name.toLowerCase().endsWith('.pdf');
+    
+    if (!isPDF) {
+      alert('Only PDF files are supported for document upload. Please upload a PDF file.');
+      return;
+    }
+
+    // Validate file size before upload - prevent server errors for large files
+    const maxSizeMB = 5; // 5MB for PDFs
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+    
+    if (file.size > maxSizeBytes) {
+      alert(`File too large. Maximum PDF size is ${maxSizeMB}MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`);
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    setIsLoading(true);
+
+    // Create FormData
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('email', userEmail);
+
+    try {
+      // Direct API approach
+      const uploadEndpoint = `${API_URL}/upload-pdf/`;
+      
+      console.log(`Uploading PDF file to: ${uploadEndpoint}`);
+      
+      // Try to upload file with improved headers
+      const response = await fetch(uploadEndpoint, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        headers: {
+          // Don't set Content-Type when using FormData, browser will set it with boundary
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+        },
+        credentials: 'omit'
+      });
+
+      if (!response.ok) {
+        // Special handling for 500 Internal Server Error
+        if (response.status === 500) {
+          throw new Error("Server error: The PDF document might be too complex, password-protected, or in an unsupported format.");
+        } else if (response.status === 413) {
+          throw new Error("File too large: The PDF document exceeds the server's size limit. Please use a smaller file (under 5MB).");
+        } else {
+          throw new Error(`API error: ${response.status}`);
+        }
+      }
+
+      // Success! Refresh the document list
+      fetchDocuments();
+      
+      // Close the sidebar
+      setIsOpen(false);
+      
+      // Trigger the chatbot to open and show the document upload message
+      addDocumentUploadMessage(file.name);
+      
+      // Also show an alert for immediate feedback
+      alert("Document uploaded successfully!");
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      
+      // Show error message
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Error uploading document: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   return (
@@ -298,10 +402,7 @@ const DocumentSidebar = () => {
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => {
-                      setChatOpen(true);
-                      setIsOpen(false);
-                    }}
+                    onClick={triggerFileUpload}
                     className="w-full"
                   >
                     <FileText className="h-4 w-4 mr-2" />
@@ -339,6 +440,15 @@ const DocumentSidebar = () => {
         />
       )}
 
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        className="hidden"
+        accept=".pdf"
+      />
+      
       {/* Alert Dialog */}
       <AlertDialog
         isOpen={isAlertOpen}
