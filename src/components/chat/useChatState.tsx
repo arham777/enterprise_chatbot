@@ -26,10 +26,30 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     }
   });
 
+  // Initialize website mode from localStorage if available, default to false
+  const [websiteMode, setWebsiteMode] = useState(() => {
+    try {
+      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
+      const savedState = localStorage.getItem('websiteMode');
+      return isAuthenticatedUser && savedState === 'true';
+    } catch (e) {
+      return false; // Default to false if localStorage access fails
+    }
+  });
+
   // Track current active CSV file
   const [activeCSVFile, setActiveCSVFile] = useState<string | null>(() => {
     try {
       return localStorage.getItem('activeCSVFile');
+    } catch (e) {
+      return null;
+    }
+  });
+
+  // Track current active website URL
+  const [activeWebsiteUrl, setActiveWebsiteUrl] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('activeWebsiteUrl');
     } catch (e) {
       return null;
     }
@@ -40,6 +60,16 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     try {
       const savedFiles = localStorage.getItem('availableCSVFiles');
       return savedFiles ? JSON.parse(savedFiles) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Track available website URLs
+  const [availableWebsiteUrls, setAvailableWebsiteUrls] = useState<string[]>(() => {
+    try {
+      const savedUrls = localStorage.getItem('availableWebsiteUrls');
+      return savedUrls ? JSON.parse(savedUrls) : [];
     } catch (e) {
       return [];
     }
@@ -203,6 +233,18 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     const newState = !useKnowledgeBase;
     setUseKnowledgeBase(newState);
     
+    // If turning on knowledge base, turn off other modes
+    if (newState) {
+      setCsvMode(false);
+      setWebsiteMode(false);
+      try {
+        localStorage.setItem('csvMode', 'false');
+        localStorage.setItem('websiteMode', 'false');
+      } catch (e) {
+        console.error('Failed to update other modes while toggling knowledge base', e);
+      }
+    }
+    
     // Persist the knowledge base state in localStorage
     try {
       localStorage.setItem('useKnowledgeBase', newState ? 'true' : 'false');
@@ -222,16 +264,18 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     const newState = !csvMode;
     setCsvMode(newState);
     
-    // If turning on CSV mode, turn off knowledge base
-    if (newState && useKnowledgeBase) {
+    // If turning on CSV mode, turn off other modes
+    if (newState) {
       setUseKnowledgeBase(false);
+      setWebsiteMode(false);
       try {
         localStorage.setItem('useKnowledgeBase', 'false');
+        localStorage.setItem('websiteMode', 'false');
         if (userEmail) {
           await updateKnowledgeBaseState(false, userEmail);
         }
       } catch (e) {
-        console.error('Failed to update knowledge base state while toggling CSV mode', e);
+        console.error('Failed to update other modes while toggling CSV mode', e);
       }
     }
     
@@ -240,6 +284,35 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
       localStorage.setItem('csvMode', newState ? 'true' : 'false');
     } catch (e) {
       console.error('Failed to save CSV mode state to localStorage', e);
+    }
+  };
+
+  // Toggle Website mode
+  const toggleWebsiteMode = async () => {
+    // Toggle state for immediate UI feedback
+    const newState = !websiteMode;
+    setWebsiteMode(newState);
+    
+    // If turning on Website mode, turn off other modes
+    if (newState) {
+      setUseKnowledgeBase(false);
+      setCsvMode(false);
+      try {
+        localStorage.setItem('useKnowledgeBase', 'false');
+        localStorage.setItem('csvMode', 'false');
+        if (userEmail) {
+          await updateKnowledgeBaseState(false, userEmail);
+        }
+      } catch (e) {
+        console.error('Failed to update other modes while toggling Website mode', e);
+      }
+    }
+    
+    // Persist the Website mode state in localStorage
+    try {
+      localStorage.setItem('websiteMode', newState ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to save Website mode state to localStorage', e);
     }
   };
 
@@ -257,6 +330,11 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     
     const hasCsvFile = chatHistory.some(
       msg => msg.fileInfo?.fileType === 'CSV'
+    );
+    
+    // Check if there's any website search in the chat history
+    const hasWebsiteSearch = chatHistory.some(
+      msg => msg.isWebsiteResponse
     );
     
     // Delete the chat_history.csv file if user is authenticated
@@ -289,6 +367,14 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
       setActiveCSVFile(null);
       localStorage.removeItem('csvMode');
       localStorage.removeItem('activeCSVFile');
+    }
+    
+    // Only reset website mode if there's no website search
+    if (!hasWebsiteSearch) {
+      setWebsiteMode(false);
+      setActiveWebsiteUrl(null);
+      localStorage.removeItem('websiteMode');
+      localStorage.removeItem('activeWebsiteUrl');
     }
     
     // Reset active file ID
@@ -355,15 +441,74 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     }]);
   };
 
+  // Function to add a new website URL to the available URLs list
+  const addWebsiteUrlToAvailable = (url: string) => {
+    // Only add if it's not already in the list
+    setAvailableWebsiteUrls(prev => {
+      if (!prev.includes(url)) {
+        const newList = [...prev, url];
+        // Save to localStorage
+        try {
+          localStorage.setItem('availableWebsiteUrls', JSON.stringify(newList));
+        } catch (e) {
+          console.error('Failed to save available website URLs to localStorage', e);
+        }
+        return newList;
+      }
+      return prev;
+    });
+  };
+  
+  // Function to handle selecting a website from the dropdown
+  const handleSelectWebsite = (url: string) => {
+    setActiveWebsiteUrl(url);
+    setWebsiteMode(true);
+    localStorage.setItem('activeWebsiteUrl', url);
+    localStorage.setItem('websiteMode', 'true');
+    
+    // Notify the user that the website has been selected
+    setChatHistory(prev => [...prev, { 
+      type: 'bot', 
+      text: `Website mode activated for: **${url}**. You can now ask questions about this website.`,
+      isWebsiteResponse: true
+    }]);
+  };
+
+  // Function to clear all website URLs from the available list
+  const clearWebsiteUrlsList = () => {
+    setAvailableWebsiteUrls([]);
+    // If website mode is active, deactivate it
+    if (websiteMode) {
+      setWebsiteMode(false);
+      localStorage.setItem('websiteMode', 'false');
+    }
+    setActiveWebsiteUrl(null);
+    localStorage.removeItem('availableWebsiteUrls');
+    localStorage.removeItem('activeWebsiteUrl');
+
+    // Notify the user
+    setChatHistory(prev => [...prev, { 
+      type: 'bot', 
+      text: 'Website URL list has been cleared.',
+      isWebsiteResponse: false
+    }]);
+  };
+
   return {
     useKnowledgeBase,
     setUseKnowledgeBase,
     csvMode,
     setCsvMode,
+    websiteMode,
+    setWebsiteMode,
     activeCSVFile,
     setActiveCSVFile,
+    activeWebsiteUrl,
+    setActiveWebsiteUrl,
     availableCSVFiles,
     setAvailableCSVFiles,
+    availableWebsiteUrls,
+    setAvailableWebsiteUrls,
     chatHistory,
     setChatHistory,
     isLoading,
@@ -374,10 +519,14 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     setActiveFileId,
     toggleKnowledgeBase,
     toggleCsvMode,
+    toggleWebsiteMode,
     resetChat,
     addCsvFileToAvailable,
     handleSelectCsvFile,
     clearCsvFilesList,
+    addWebsiteUrlToAvailable,
+    handleSelectWebsite,
+    clearWebsiteUrlsList,
     isResetting
   };
 }; 

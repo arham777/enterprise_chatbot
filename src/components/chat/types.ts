@@ -13,8 +13,10 @@ export type ChatMessageType = {
   isStreaming?: boolean; // Whether the message is currently being streamed
   loadingIndicator?: boolean; // Whether to show loading indicator instead of content
   sourceDocument?: string; // Optional source document information
+  sourceUrl?: string; // Optional source URL for website search
   suggestedQuestions?: string[]; // Optional suggested follow-up questions
   inputCost?: number;
   outputCost?: number;
   isCsvResponse?: boolean; // Optional flag to indicate CSV response
+  isWebsiteResponse?: boolean; // Optional flag to indicate website response
 }; 
