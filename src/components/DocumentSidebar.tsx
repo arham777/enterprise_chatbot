@@ -4,7 +4,7 @@ import { FileText, X, Trash2, RefreshCw, LogIn } from 'lucide-react';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { useChatAssistant } from './HeroSection';
-import { addDocumentUploadMessage } from './ChatAssistantButton';
+import { addDocumentUploadMessage, notifyFileDeleted } from './chat/index';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import AlertDialog from './AlertDialog';
@@ -109,6 +109,9 @@ const DocumentSidebar = () => {
       if (!response.ok) {
         throw new Error(`Failed to delete document: ${response.status}`);
       }
+
+      // Notify chat component about the deleted file
+      notifyFileDeleted(fileName);
 
       // Refresh the document list
       fetchDocuments();
@@ -382,6 +385,12 @@ const DocumentSidebar = () => {
                           console.error('Server error:', errorText);
                           throw new Error(`Failed to delete all documents: ${response.status} - ${errorText || 'Unknown error'}`);
                         }
+                        
+                        // Find CSV files that were deleted and notify for each one
+                        const csvFiles = documents.filter(doc => doc.toLowerCase().endsWith('.csv'));
+                        csvFiles.forEach(csvFile => {
+                          notifyFileDeleted(csvFile);
+                        });
                         
                         // Refresh the document list
                         fetchDocuments();
