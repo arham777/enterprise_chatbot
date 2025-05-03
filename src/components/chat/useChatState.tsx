@@ -156,6 +156,47 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     }
   }, [userEmail, chatHistory.length, historyLoadAttempted, isLoading]);
 
+  // Effect to listen for file deletion events
+  useEffect(() => {
+    // Handler for CSV file deletion
+    const handleFileDeleted = (event: CustomEvent) => {
+      const { fileName } = event.detail;
+      
+      // Check if this is a CSV file
+      if (fileName && fileName.toLowerCase().endsWith('.csv')) {
+        // Remove the file from the available files list
+        setAvailableCSVFiles(prev => {
+          const newList = prev.filter(file => file !== fileName);
+          
+          // Save updated list to localStorage
+          try {
+            localStorage.setItem('availableCSVFiles', JSON.stringify(newList));
+          } catch (e) {
+            console.error('Failed to update available CSV files in localStorage', e);
+          }
+          
+          return newList;
+        });
+        
+        // If this was the active file, reset CSV mode
+        if (activeCSVFile === fileName) {
+          setCsvMode(false);
+          setActiveCSVFile(null);
+          localStorage.removeItem('csvMode');
+          localStorage.removeItem('activeCSVFile');
+        }
+      }
+    };
+    
+    // Add event listener
+    window.addEventListener('document-deleted', handleFileDeleted as EventListener);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('document-deleted', handleFileDeleted as EventListener);
+    };
+  }, [activeCSVFile]);
+
   // Helper function to toggle knowledge base
   const toggleKnowledgeBase = async () => {
     // Toggle state first for immediate UI feedback

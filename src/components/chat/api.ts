@@ -365,11 +365,29 @@ export const sendMessage = async (message: string, userEmail: string, csvMode: b
     
     // Extract the response text from the data object
     let responseText = '';
+    let visualization: string | undefined = undefined;
     
     // Handle different response formats from the two endpoints
     if (csvMode && data.text && Array.isArray(data.text)) {
       // For /ask-csv/ endpoint, the response contains a "text" array
       responseText = data.text.join('\n\n');
+      
+      // Extract base64 images if available
+      if (data.images_base64 && Array.isArray(data.images_base64) && data.images_base64.length > 0) {
+        // For multiple images, join them with a separator that ChatMessage component can parse
+        visualization = data.images_base64.map((base64: string) => {
+          // Check if this is already a data URL or needs to be converted
+          if (base64.startsWith('data:image/')) {
+            return base64;
+          } else {
+            // Default to PNG if image type is not specified
+            return `data:image/png;base64,${base64}`;
+          }
+        }).join('||VISUALIZATION_SEPARATOR||');
+        
+        console.log('Extracted visualization data from CSV response');
+      }
+      
       console.log('Received response from ask-csv endpoint:', data);
     } else {
       // For /generate-response/ endpoint, the response contains a "response" field
@@ -382,6 +400,7 @@ export const sendMessage = async (message: string, userEmail: string, csvMode: b
       responseText,
       sourceDocument: data.source_document || data.source,
       suggestedQuestions: data.suggested_questions,
+      visualization: visualization,
       isCsvResponse: csvMode
     };
   } catch (error) {

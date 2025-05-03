@@ -400,6 +400,7 @@ const ChatAssistantButton = () => {
             loadingIndicator: false,
             sourceDocument: response.sourceDocument,
             suggestedQuestions: response.suggestedQuestions,
+            visualization: response.visualization,
             isCsvResponse: response.isCsvResponse
           }
         ]);
@@ -634,6 +635,20 @@ export const addDocumentUploadMessage = (fileName: string, fileType?: 'PDF' | 'C
   });
   
   // Dispatch the event to be handled by the ChatAssistantButton component
+  window.dispatchEvent(event);
+};
+
+// Export a function to notify the chat when a file is deleted
+export const notifyFileDeleted = (fileName: string) => {
+  // Create event with details about the deleted document
+  const event = new CustomEvent('document-deleted', {
+    detail: {
+      fileName: fileName,
+      timestamp: new Date().toISOString()
+    }
+  });
+  
+  // Dispatch the event to be handled by components
   window.dispatchEvent(event);
 };
 

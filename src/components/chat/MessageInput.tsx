@@ -118,15 +118,6 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           >
             <div className="p-2 mb-1 text-xs font-medium text-muted-foreground border-b border-border flex justify-between items-center">
               <span>Select CSV File</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-                className="text-muted-foreground hover:text-foreground"
-                title="Refresh CSV file list"
-              >
-                <RefreshCw className="h-3 w-3" />
-              </button>
             </div>
             
             {/* CSV Mode Controls */}
