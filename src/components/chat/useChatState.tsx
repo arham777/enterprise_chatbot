@@ -1,0 +1,342 @@
+import { useState, useRef, useEffect } from 'react';
+import { fetchChatHistory, convertHistoryToChatMessages, updateKnowledgeBaseState, deleteChatHistory } from './api';
+import { ChatMessageType } from './types';
+
+export const useChatState = (userEmail: string | null, isAuthenticated: boolean) => {
+  // Initialize knowledge base state from localStorage if available, default to false
+  const [useKnowledgeBase, setUseKnowledgeBase] = useState(() => {
+    try {
+      // Only use saved state if user is authenticated
+      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
+      const savedState = localStorage.getItem('useKnowledgeBase');
+      return isAuthenticatedUser && savedState === 'true';
+    } catch (e) {
+      return false; // Default to false if localStorage access fails
+    }
+  });
+
+  // Initialize CSV mode from localStorage if available, default to false
+  const [csvMode, setCsvMode] = useState(() => {
+    try {
+      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
+      const savedState = localStorage.getItem('csvMode');
+      return isAuthenticatedUser && savedState === 'true';
+    } catch (e) {
+      return false; // Default to false if localStorage access fails
+    }
+  });
+
+  // Track current active CSV file
+  const [activeCSVFile, setActiveCSVFile] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('activeCSVFile');
+    } catch (e) {
+      return null;
+    }
+  });
+
+  // Track available CSV files
+  const [availableCSVFiles, setAvailableCSVFiles] = useState<string[]>(() => {
+    try {
+      const savedFiles = localStorage.getItem('availableCSVFiles');
+      return savedFiles ? JSON.parse(savedFiles) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Initialize with empty array first, we'll load from sessionStorage in useEffect
+  const [chatHistory, setChatHistory] = useState<ChatMessageType[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Track if we've already attempted to load chat history
+  const [historyLoadAttempted, setHistoryLoadAttempted] = useState(false);
+  
+  // Use refs to keep track of state that shouldn't cause re-renders
+  const isResetting = useRef<boolean>(false);
+  const sessionId = useRef<string>(localStorage.getItem('sessionId') || `session_${Date.now()}`);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+
+  // Effect to save chat history to session storage whenever it changes
+  useEffect(() => {
+    if (chatHistory.length > 0 && isAuthenticated && userEmail) {
+      // Save chat history to user-specific session storage for persistence
+      sessionStorage.setItem(`chatHistory_${userEmail}`, JSON.stringify(chatHistory));
+    }
+  }, [chatHistory, isAuthenticated, userEmail]);
+
+  // Watch for authentication state changes and deactivate knowledge base when signed out
+  useEffect(() => {
+    // If user is not authenticated, deactivate the knowledge base
+    if (!isAuthenticated) {
+      setUseKnowledgeBase(false);
+      localStorage.removeItem('useKnowledgeBase'); // Remove from localStorage
+      
+      // If we have access to the backend, also update it there
+      if (userEmail) {
+        updateKnowledgeBaseState(false, userEmail).catch(error => {
+          console.error('Failed to deactivate knowledge base on sign out:', error);
+        });
+      }
+    }
+  }, [isAuthenticated, userEmail]);
+
+  // Effect to load chat history from sessionStorage when auth data is available
+  useEffect(() => {
+    if (isAuthenticated && userEmail) {
+      // Check if we have a cached history for this user
+      const savedHistory = sessionStorage.getItem(`chatHistory_${userEmail}`);
+      if (savedHistory) {
+        try {
+          const parsedHistory = JSON.parse(savedHistory);
+          if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
+            // Load chat history from sessionStorage
+            setChatHistory(parsedHistory);
+            // Mark history as loaded since we found it in sessionStorage
+            setHistoryLoadAttempted(true);
+            console.log('Loaded chat history from sessionStorage for user:', userEmail);
+          } else {
+            // If cached history exists but is empty, attempt to load from backend
+            setHistoryLoadAttempted(false);
+          }
+        } catch (error) {
+          console.error('Error parsing chat history from sessionStorage:', error);
+          // Invalid cache, clear it
+          sessionStorage.removeItem(`chatHistory_${userEmail}`);
+          setHistoryLoadAttempted(false);
+        }
+      } else {
+        // No cached history, will attempt to load from backend
+        // historyLoadAttempted flag is already false by default
+        console.log('No cached chat history found for user:', userEmail);
+      }
+    } else if (!isAuthenticated) {
+      // Clear chat history when logged out
+      setChatHistory([]);
+      setHistoryLoadAttempted(false);
+    }
+  }, [isAuthenticated, userEmail]);
+
+  // Load user-specific chat history 
+  useEffect(() => {
+    // Reset history load attempted flag when user changes
+    if (userEmail) {
+      const hasAttemptedForCurrentUser = sessionStorage.getItem(`historyLoadAttempted_${userEmail}`) === 'true';
+      setHistoryLoadAttempted(hasAttemptedForCurrentUser);
+    }
+    
+    // Try to load chat history only if needed conditions are met
+    if (userEmail && chatHistory.length === 0 && !historyLoadAttempted && !isLoading) {
+      console.log('Attempting to load chat history for user:', userEmail);
+      
+      const loadChatHistory = async () => {
+        setIsLoading(true);
+        try {
+          // Mark that we've attempted to load history for this user
+          sessionStorage.setItem(`historyLoadAttempted_${userEmail}`, 'true');
+          setHistoryLoadAttempted(true);
+          
+          const result = await fetchChatHistory(userEmail);
+          if (result.success && result.data) {
+            // Convert to our format
+            const formattedHistory = convertHistoryToChatMessages(result.data);
+            if (formattedHistory.length > 0) {
+              setChatHistory(formattedHistory);
+              console.log(`Chat history loaded successfully: ${formattedHistory.length} messages`);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading chat history:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      loadChatHistory();
+    }
+  }, [userEmail, chatHistory.length, historyLoadAttempted, isLoading]);
+
+  // Helper function to toggle knowledge base
+  const toggleKnowledgeBase = async () => {
+    // Toggle state first for immediate UI feedback
+    const newState = !useKnowledgeBase;
+    setUseKnowledgeBase(newState);
+    
+    // Persist the knowledge base state in localStorage
+    try {
+      localStorage.setItem('useKnowledgeBase', newState ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to save knowledge base state to localStorage', e);
+    }
+    
+    // Update the backend with the new state if user is authenticated
+    if (userEmail) {
+      await updateKnowledgeBaseState(newState, userEmail);
+    }
+  };
+
+  // Toggle CSV mode
+  const toggleCsvMode = async () => {
+    // Toggle state for immediate UI feedback
+    const newState = !csvMode;
+    setCsvMode(newState);
+    
+    // If turning on CSV mode, turn off knowledge base
+    if (newState && useKnowledgeBase) {
+      setUseKnowledgeBase(false);
+      try {
+        localStorage.setItem('useKnowledgeBase', 'false');
+        if (userEmail) {
+          await updateKnowledgeBaseState(false, userEmail);
+        }
+      } catch (e) {
+        console.error('Failed to update knowledge base state while toggling CSV mode', e);
+      }
+    }
+    
+    // Persist the CSV mode state in localStorage
+    try {
+      localStorage.setItem('csvMode', newState ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to save CSV mode state to localStorage', e);
+    }
+  };
+
+  // Function to reset chat
+  const resetChat = async () => {
+    if (chatHistory.length === 0) return;
+    
+    // Set resetting flag to prevent immediate refetch of chat history
+    isResetting.current = true;
+    
+    // Check if there's any PDF document or CSV file in the chat history
+    const hasPdfDocument = chatHistory.some(
+      msg => msg.fileInfo?.fileType === 'PDF'
+    );
+    
+    const hasCsvFile = chatHistory.some(
+      msg => msg.fileInfo?.fileType === 'CSV'
+    );
+    
+    // Delete the chat_history.csv file if user is authenticated
+    if (userEmail) {
+      await deleteChatHistory(userEmail);
+    }
+    
+    // Clear chat history and reset state
+    setChatHistory([]);
+    
+    // Reset history load attempted flag so we can try loading history again
+    setHistoryLoadAttempted(false);
+    
+    // Also remove session storage entries to ensure saved chat is completely deleted
+    if (userEmail) {
+      // Remove the history load attempted flag for this user
+      sessionStorage.removeItem(`historyLoadAttempted_${userEmail}`);
+      // Remove any saved chat history
+      sessionStorage.removeItem(`chatHistory_${userEmail}`);
+    }
+    
+    // Only reset knowledge base if there's no PDF document
+    if (!hasPdfDocument) {
+      setUseKnowledgeBase(false);
+    }
+    
+    // Only reset CSV mode if there's no CSV file
+    if (!hasCsvFile) {
+      setCsvMode(false);
+      setActiveCSVFile(null);
+      localStorage.removeItem('csvMode');
+      localStorage.removeItem('activeCSVFile');
+    }
+    
+    // Reset active file ID
+    setActiveFileId(null);
+    
+    // Reset the flag after a short delay
+    setTimeout(() => {
+      isResetting.current = false;
+    }, 1000);
+
+    return true;
+  };
+
+  // Function to add a new CSV file to the available files list
+  const addCsvFileToAvailable = (fileName: string) => {
+    // Only add if it's not already in the list
+    setAvailableCSVFiles(prev => {
+      if (!prev.includes(fileName)) {
+        const newList = [...prev, fileName];
+        // Save to localStorage
+        try {
+          localStorage.setItem('availableCSVFiles', JSON.stringify(newList));
+        } catch (e) {
+          console.error('Failed to save available CSV files to localStorage', e);
+        }
+        return newList;
+      }
+      return prev;
+    });
+  };
+  
+  // Function to handle selecting a CSV file from the dropdown
+  const handleSelectCsvFile = (fileName: string) => {
+    setActiveCSVFile(fileName);
+    setCsvMode(true);
+    localStorage.setItem('activeCSVFile', fileName);
+    localStorage.setItem('csvMode', 'true');
+    
+    // Notify the user that the file has been selected
+    setChatHistory(prev => [...prev, { 
+      type: 'bot', 
+      text: `CSV mode activated for file: **${fileName}**. You can now ask questions about this data.`,
+      isCsvResponse: true
+    }]);
+  };
+
+  // Function to clear all CSV files from the available list
+  const clearCsvFilesList = () => {
+    setAvailableCSVFiles([]);
+    // If CSV mode is active, deactivate it
+    if (csvMode) {
+      setCsvMode(false);
+      localStorage.setItem('csvMode', 'false');
+    }
+    setActiveCSVFile(null);
+    localStorage.removeItem('availableCSVFiles');
+    localStorage.removeItem('activeCSVFile');
+
+    // Notify the user
+    setChatHistory(prev => [...prev, { 
+      type: 'bot', 
+      text: 'CSV file list has been cleared.',
+      isCsvResponse: false
+    }]);
+  };
+
+  return {
+    useKnowledgeBase,
+    setUseKnowledgeBase,
+    csvMode,
+    setCsvMode,
+    activeCSVFile,
+    setActiveCSVFile,
+    availableCSVFiles,
+    setAvailableCSVFiles,
+    chatHistory,
+    setChatHistory,
+    isLoading,
+    setIsLoading,
+    historyLoadAttempted,
+    setHistoryLoadAttempted,
+    activeFileId,
+    setActiveFileId,
+    toggleKnowledgeBase,
+    toggleCsvMode,
+    resetChat,
+    addCsvFileToAvailable,
+    handleSelectCsvFile,
+    clearCsvFilesList,
+    isResetting
+  };
+}; 
