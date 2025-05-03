@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { MessageSquare, X, FileText, BarChart3, Database, Paperclip, Send, RefreshCw, Maximize2, Minus, Sparkles, Bot, Loader2, Table, Globe } from 'lucide-react';
+import { MessageSquare, X, FileText, BarChart3, Database, Paperclip, Send, RefreshCw, Maximize2, Minus, Sparkles, Bot, Loader2, Table, Globe, Table2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardFooter } from './ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,6 +14,26 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import AlertDialog from './AlertDialog';
 import { useAlertDialog } from '@/hooks/useAlertDialog';
+
+// Add styles for stable scrollbar
+const scrollbarStyles = `
+  .scrollbar-stable::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-stable::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-stable::-webkit-scrollbar-thumb {
+    background-color: rgba(155, 155, 155, 0.5);
+    border-radius: 20px;
+    border: 2px solid transparent;
+  }
+  .scrollbar-stable {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(155, 155, 155, 0.5) transparent;
+  }
+`;
 
 // Extended type for chat messages to support different content types
 type ChatMessageType = {
@@ -33,6 +53,7 @@ type ChatMessageType = {
   suggestedQuestions?: string[]; // Optional suggested follow-up questions
   inputCost?: number;
   outputCost?: number;
+  isCsvResponse?: boolean; // Optional flag to indicate CSV response
 };
 
 // Styled markdown renderer component
@@ -193,6 +214,8 @@ const StreamingText = ({ text }: { text: string }) => {
 const ChatMessage = ({ message }: { message: ChatMessageType }) => {
   const isUser = message.type === 'user';
   const [showSuggestedQuestions, setShowSuggestedQuestions] = useState(true);
+  // Check if this is a CSV-related message
+  const isCsvResponse = message.fileInfo?.fileType === 'CSV' || message.isCsvResponse;
   
   // Split multiple visualizations if they exist
   const visualizations = message.visualization 
@@ -263,10 +286,21 @@ const ChatMessage = ({ message }: { message: ChatMessageType }) => {
             <div className="flex items-center gap-2 p-2 bg-secondary/30 rounded mt-3">
               {!message.sourceDocument || message.sourceDocument === "N/A" ? (
                 <>
+                  {isCsvResponse ? (
+                    <>
+                      <Table2 className="h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">CSV search</p>
+                      </div>
+                    </>
+                  ) : (
+                <>
                   <Globe className="h-4 w-4 text-primary" />
                   <div>
                     <p className="text-xs text-muted-foreground">web search</p>
                   </div>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -398,6 +432,37 @@ const ChatAssistantButton = () => {
       return false; // Default to false if localStorage access fails
     }
   });
+  // Initialize CSV mode from localStorage if available, default to false
+  const [csvMode, setCsvMode] = useState(() => {
+    try {
+      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
+      const savedState = localStorage.getItem('csvMode');
+      return isAuthenticatedUser && savedState === 'true';
+    } catch (e) {
+      return false; // Default to false if localStorage access fails
+    }
+  });
+  // Track current active CSV file
+  const [activeCSVFile, setActiveCSVFile] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('activeCSVFile');
+    } catch (e) {
+      return null;
+    }
+  });
+  // Track available CSV files
+  const [availableCSVFiles, setAvailableCSVFiles] = useState<string[]>(() => {
+    try {
+      const savedFiles = localStorage.getItem('availableCSVFiles');
+      return savedFiles ? JSON.parse(savedFiles) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  // Track if CSV dropdown is open
+  const [showCsvDropdown, setShowCsvDropdown] = useState(false);
+  // Ref for the dropdown menu for click outside detection
+  const csvDropdownRef = useRef<HTMLDivElement>(null);
   // Initialize with empty array first, we'll load from sessionStorage in useEffect
   const [chatHistory, setChatHistory] = useState<ChatMessageType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -767,9 +832,13 @@ const ChatAssistantButton = () => {
         // Set resetting flag to prevent immediate refetch of chat history
         isResetting.current = true;
         
-        // Check if there's any PDF document in the chat history
+        // Check if there's any PDF document or CSV file in the chat history
         const hasPdfDocument = chatHistory.some(
           msg => msg.fileInfo?.fileType === 'PDF'
+        );
+        
+        const hasCsvFile = chatHistory.some(
+          msg => msg.fileInfo?.fileType === 'CSV'
         );
         
         // Delete the chat_history.csv file if user is authenticated
@@ -822,9 +891,25 @@ const ChatAssistantButton = () => {
         // Reset history load attempted flag so we can try loading history again
         setHistoryLoadAttempted(false);
         
+        // Also remove session storage entries to ensure saved chat is completely deleted
+        if (userEmail) {
+          // Remove the history load attempted flag for this user
+          sessionStorage.removeItem(`historyLoadAttempted_${userEmail}`);
+          // Remove any saved chat history
+          sessionStorage.removeItem(`chatHistory_${userEmail}`);
+        }
+        
         // Only reset knowledge base if there's no PDF document
         if (!hasPdfDocument) {
           setUseKnowledgeBase(false);
+        }
+        
+        // Only reset CSV mode if there's no CSV file
+        if (!hasCsvFile) {
+          setCsvMode(false);
+          setActiveCSVFile(null);
+          localStorage.removeItem('csvMode');
+          localStorage.removeItem('activeCSVFile');
         }
         
         // Reset active file ID
@@ -904,6 +989,42 @@ const ChatAssistantButton = () => {
     await updateKnowledgeBaseState(newState);
   };
 
+  // Toggle CSV mode
+  const toggleCsvMode = async () => {
+    // Toggle state for immediate UI feedback
+    const newState = !csvMode;
+    setCsvMode(newState);
+    
+    // If turning on CSV mode, turn off knowledge base
+    if (newState && useKnowledgeBase) {
+      setUseKnowledgeBase(false);
+      try {
+        localStorage.setItem('useKnowledgeBase', 'false');
+        await updateKnowledgeBaseState(false);
+      } catch (e) {
+        console.error('Failed to update knowledge base state while toggling CSV mode', e);
+      }
+    }
+    
+    // Persist the CSV mode state in localStorage
+    try {
+      localStorage.setItem('csvMode', newState ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to save CSV mode state to localStorage', e);
+    }
+    
+    // Focus back on input after toggling
+    inputRef.current?.focus();
+    
+    // If we're turning on CSV mode but no CSV file is active, notify the user
+    if (newState && !activeCSVFile) {
+      setChatHistory(prev => [...prev, { 
+        type: 'bot', 
+        text: 'CSV mode has been activated. Please upload a CSV file to begin querying it.'
+      }]);
+    }
+  };
+
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -917,25 +1038,26 @@ const ChatAssistantButton = () => {
       return;
     }
 
-    // Check if file is PDF - only allow PDF files as endpoint can only handle PDFs
+    // Check if file is PDF or CSV
     const isPDF = file.name.toLowerCase().endsWith('.pdf');
+    const isCSV = file.name.toLowerCase().endsWith('.csv');
     
-    if (!isPDF) {
+    if (!isPDF && !isCSV) {
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: 'Only PDF files are supported for document upload. Please upload a PDF file.'
+        text: 'Only PDF and CSV files are supported for document upload. Please upload a PDF or CSV file.'
       }]);
       return;
     }
 
     // Validate file size before upload - prevent server errors for large files
-    const maxSizeMB = 5; // 5MB for PDFs
+    const maxSizeMB = isPDF ? 5 : 2; // 5MB for PDFs, 2MB for CSVs
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     
     if (file.size > maxSizeBytes) {
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: `File too large. Maximum PDF size is ${maxSizeMB}MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`
+        text: `File too large. Maximum ${isPDF ? 'PDF' : 'CSV'} size is ${maxSizeMB}MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`
       }]);
       // Reset the file input
       if (fileInputRef.current) {
@@ -944,23 +1066,25 @@ const ChatAssistantButton = () => {
       return;
     }
 
-    // Additional PDF validation - check PDF format
-    // Simple PDF header check
-    const firstBytes = await readFileHeader(file, 5);
-    const isPDFFormat = firstBytes === '%PDF-';
-    
-    if (!isPDFFormat) {
-      setChatHistory(prev => [...prev, { 
-        type: 'bot', 
-        text: `The file ${file.name} doesn't appear to be a valid PDF document. Make sure your file is not corrupted.`
-      }]);
-      return;
+    // Additional PDF validation if it's a PDF file
+    if (isPDF) {
+      // Simple PDF header check
+      const firstBytes = await readFileHeader(file, 5);
+      const isPDFFormat = firstBytes === '%PDF-';
+      
+      if (!isPDFFormat) {
+        setChatHistory(prev => [...prev, { 
+          type: 'bot', 
+          text: `The file ${file.name} doesn't appear to be a valid PDF document. Make sure your file is not corrupted.`
+        }]);
+        return;
+      }
     }
 
     // Add file to chat history
     setChatHistory(prev => [...prev, { 
       type: 'user', 
-      text: `I'd like to analyze this PDF document: ${file.name}`
+      text: `I'd like to analyze this ${isPDF ? 'PDF document' : 'CSV file'}: ${file.name}`
     }]);
     
     setIsLoading(true);
@@ -970,14 +1094,22 @@ const ChatAssistantButton = () => {
     formData.append('file', file);
     formData.append('email', userEmail);
 
+    // For CSV files, add the additional parameters from the API spec
+    if (isCSV) {
+      formData.append('prompt', `Analyze the CSV file ${file.name}`);
+      formData.append('filename', file.name);
+    }
+
     let response = null;
     let errorMessage = '';
 
     try {
-      // Direct API approach
-      const uploadEndpoint = `${ORIGINAL_API_URL}/upload-pdf/`;
+      // Select the appropriate endpoint based on file type
+      const uploadEndpoint = isPDF 
+        ? `${ORIGINAL_API_URL}/upload-pdf/`
+        : `${ORIGINAL_API_URL}/upload-csv/`;
       
-      console.log(`Uploading PDF file to: ${uploadEndpoint}`);
+      console.log(`Uploading ${isPDF ? 'PDF' : 'CSV'} file to: ${uploadEndpoint}`);
       
       // Try to upload file with improved headers
       response = await fetch(uploadEndpoint, {
@@ -995,9 +1127,9 @@ const ChatAssistantButton = () => {
       if (!response.ok) {
         // Special handling for 500 Internal Server Error
         if (response.status === 500) {
-          throw new Error("Server error: The PDF document might be too complex, password-protected, or in an unsupported format.");
+          throw new Error(`Server error: The ${isPDF ? 'PDF document' : 'CSV file'} might be too complex, ${isPDF ? 'password-protected,' : ''} or in an unsupported format.`);
         } else if (response.status === 413) {
-          throw new Error("File too large: The PDF document exceeds the server's size limit. Please use a smaller file (under 5MB).");
+          throw new Error(`File too large: The ${isPDF ? 'PDF document' : 'CSV file'} exceeds the server's size limit. Please use a smaller file (under ${maxSizeMB}MB).`);
         } else {
           throw new Error(`API error: ${response.status}`);
         }
@@ -1017,7 +1149,7 @@ const ChatAssistantButton = () => {
       if (isLikelyFileSizeIssue) {
         setChatHistory(prev => [...prev, { 
           type: 'bot', 
-          text: `## File Too Large\n\nThe file you're trying to upload exceeds the maximum size limit (5MB).\n\nPlease compress your PDF or use a smaller file.`
+          text: `## File Too Large\n\nThe file you're trying to upload exceeds the maximum size limit (${maxSizeMB}MB).\n\nPlease ${isPDF ? 'compress your PDF' : 'reduce your CSV file size'} or use a smaller file.`
         }]);
         setIsLoading(false);
         if (fileInputRef.current) {
@@ -1060,9 +1192,25 @@ const ChatAssistantButton = () => {
           // Try to parse as JSON
           data = JSON.parse(text);
           
-          // Automatically enable knowledge base when a PDF is uploaded
-          // We won't check current state because we want to ensure it's definitely on
+          // Automatically enable appropriate mode based on file type
+          if (isPDF) {
+            // For PDF files, enable knowledge base
           setUseKnowledgeBase(true);
+            setCsvMode(false);
+            localStorage.setItem('useKnowledgeBase', 'true');
+            localStorage.setItem('csvMode', 'false');
+          } else if (isCSV) {
+            // For CSV files, enable CSV mode and set active file
+            setUseKnowledgeBase(false);
+            setCsvMode(true);
+            setActiveCSVFile(file.name);
+            localStorage.setItem('useKnowledgeBase', 'false');
+            localStorage.setItem('csvMode', 'true');
+            localStorage.setItem('activeCSVFile', file.name);
+            
+            // Add to available CSV files list
+            addCsvFileToAvailable(file.name);
+          }
         } catch (e) {
           // If not JSON, use text directly
           data = text;
@@ -1073,15 +1221,15 @@ const ChatAssistantButton = () => {
         
         // Check if the response is an object with a message property (from FastAPI)
         if (data && typeof data === 'object' && data.message) {
-          responseText = `The **${file.name}** has been uploaded successfully. You can ask any questions related to this document.`;
+          responseText = `The **${file.name}** has been uploaded successfully. You can ask any questions related to this ${isPDF ? 'document' : 'data'}.`;
         } else {
           responseText = typeof data === 'string' 
             ? data 
-            : `The **${file.name}** has been uploaded successfully. You can ask any questions related to this document.`;
+            : `The **${file.name}** has been uploaded successfully. You can ask any questions related to this ${isPDF ? 'document' : 'data'}.`;
         }
         
         // Use the dedicated function to properly update knowledge base state on the backend
-        // This ensures consistent behavior between manual activation and file-upload activation
+        if (isPDF) {
         try {
           const result = await updateKnowledgeBaseState(true);
           if (result) {
@@ -1093,6 +1241,7 @@ const ChatAssistantButton = () => {
         } catch (kbError) {
           console.error('Error activating knowledge base:', kbError);
           // Continue despite error as we've already updated the UI
+          }
         }
         
         // Log source document information if available
@@ -1100,11 +1249,13 @@ const ChatAssistantButton = () => {
           console.log(`Response generated from source document: ${data.source_document}`);
         }
         
-        // If we've got this far, it means we successfully uploaded the file
-        // Create a friendly success message with knowledge base activation notification
-        let successMessage = `PDF document **${file.name}** has been uploaded successfully.`;
-        if (!useKnowledgeBase) {
+        // Create a friendly success message with appropriate mode activation notification
+        let successMessage = `${isPDF ? 'PDF document' : 'CSV file'} **${file.name}** has been uploaded successfully.`;
+        
+        if (isPDF && !useKnowledgeBase) {
           successMessage += '\n\nThe knowledge base has been automatically activated. You can now ask questions about your document content.';
+        } else if (isCSV && !csvMode) {
+          successMessage += '\n\nCSV mode has been automatically activated. You can now ask questions about this CSV file.';
         }
         
         setChatHistory(prev => [...prev, { 
@@ -1112,13 +1263,17 @@ const ChatAssistantButton = () => {
           text: successMessage,
           fileInfo: {
             filename: file.name,
-            fileType: 'PDF',
+            fileType: isPDF ? 'PDF' : 'CSV',
           },
           sourceDocument: data.source_document
         }]);
         
-        // No file ID concept for PDFs in this implementation
+        // Set active file ID for CSV files
+        if (isCSV) {
+          setActiveFileId(file.name);
+        } else {
         setActiveFileId(null);
+        }
       } catch (processError) {
         console.error('Error processing response:', processError);
         setChatHistory(prev => [...prev, { 
@@ -1214,15 +1369,6 @@ const ChatAssistantButton = () => {
         isStreaming: true,
         loadingIndicator: true
       }]);
-
-      // Create the request body matching the API's expected format
-      const requestBody = JSON.stringify({ 
-        query: trimmedMessage
-      });
-
-      // Add debug logging to show if knowledge base is being used
-      console.log(`Using knowledge base: ${useKnowledgeBase ? 'ON' : 'OFF'}`);
-      console.log('Request details:', { query: trimmedMessage, email: userEmail });
       
       // Check if we have the user email
       if (!userEmail) {
@@ -1241,13 +1387,66 @@ const ChatAssistantButton = () => {
       }
 
       try {
-        // Try direct call first without proxy
-        // Add email as query parameter
-        const apiEndpoint = `${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`;
-        console.log(`Attempting direct API call to: ${apiEndpoint}`);
-        
-        // Use a more complete set of headers to handle CORS properly
-        const response = await fetch(apiEndpoint, {
+        // Determine which endpoint to use based on mode
+        let apiEndpoint = '';
+        let requestBody;
+        // Declare response variable at the top scope of the try block
+        let response: Response;
+
+        // Choose endpoint and prepare request body based on active mode
+        if (csvMode && activeCSVFile) {
+          // Use ask-csv endpoint when in CSV mode and we have an active CSV file
+          // Note: filename must include the extension (e.g., "data.csv") for the ask-csv endpoint
+          apiEndpoint = `${ORIGINAL_API_URL}/ask-csv/`;
+          
+          // Ensure all required fields are present and not null
+          const email = userEmail || ''; 
+          const prompt = trimmedMessage || '';
+          const filename = activeCSVFile || '';
+          
+          // Log all parameters for debugging
+          console.log('Sending to ask-csv endpoint with params:', {
+            email,
+            prompt,
+            filename
+          });
+          
+          // Check if any required field is missing
+          if (!email || !prompt || !filename) {
+            console.error('Missing required fields for ask-csv endpoint:', {
+              hasEmail: !!email,
+              hasPrompt: !!prompt,
+              hasFilename: !!filename
+            });
+          }
+          
+          // Format as form data instead of JSON to test if that resolves the issue
+          const formData = new FormData();
+          formData.append('email', email);
+          formData.append('prompt', prompt);
+          formData.append('filename', filename);
+          
+          // Try using FormData instead of JSON
+          response = await fetch(apiEndpoint, {
+            method: 'POST',
+            body: formData,
+            mode: 'cors',
+            headers: {
+              'Accept': 'application/json',
+              'Origin': window.location.origin,
+            }
+          });
+          
+          if (!response.ok) {
+            // If FormData approach fails, try with JSON
+            console.log('FormData approach failed, trying with JSON...');
+            requestBody = JSON.stringify({ 
+              email: email,
+              prompt: prompt,
+              filename: filename
+            });
+            
+            response = await fetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1257,7 +1456,29 @@ const ChatAssistantButton = () => {
           body: requestBody,
           mode: 'cors'
         });
+          }
+        } else {
+          // Use standard endpoint for all other scenarios
+          apiEndpoint = `${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`;
+          requestBody = JSON.stringify({ 
+            query: trimmedMessage
+          });
+          console.log(`Using standard mode. Knowledge base: ${useKnowledgeBase ? 'ON' : 'OFF'}`);
+          
+          // For non-CSV mode, proceed with the normal request
+          response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Origin': window.location.origin,
+            },
+            body: requestBody,
+            mode: 'cors'
+          });
+        }
 
+        // Check response status regardless of which endpoint was used
         if (!response.ok) {
           const errorText = await response.text();
           console.error('API error response:', response.status, errorText);
@@ -1268,7 +1489,18 @@ const ChatAssistantButton = () => {
         const data = await response.json();
         
         // Extract the response text from the data object
-        let responseText = data.response || 'No response received';
+        let responseText = '';
+        
+        // Handle different response formats from the two endpoints
+        if (csvMode && data.text && Array.isArray(data.text)) {
+          // For /ask-csv/ endpoint, the response contains a "text" array
+          responseText = data.text.join('\n\n');
+          console.log('Received response from ask-csv endpoint:', data);
+        } else {
+          // For /generate-response/ endpoint, the response contains a "response" field
+          responseText = data.response || 'No response received';
+          console.log('Received response from generate-response endpoint:', data);
+        }
         
         // If the message was a greeting, personalize the response with the user's name
         if (isGreeting(trimmedMessage)) {
@@ -1292,7 +1524,8 @@ const ChatAssistantButton = () => {
             isStreaming: true,
             loadingIndicator: false,
             sourceDocument: data.source_document || data.source,
-            suggestedQuestions: data.suggested_questions
+            suggestedQuestions: data.suggested_questions,
+            isCsvResponse: csvMode // Set the CSV response flag when in CSV mode
           }
         ]);
         
@@ -1319,15 +1552,33 @@ const ChatAssistantButton = () => {
         try {
           console.log("Direct API call failed. Attempting with alternative headers...");
           
+          // Determine fallback endpoint based on current mode
+          let fallbackEndpoint;
+          let fallbackBody;
+          
+          if (csvMode && activeCSVFile) {
+            fallbackEndpoint = `${ORIGINAL_API_URL}/ask-csv/`;
+            fallbackBody = JSON.stringify({ 
+              email: userEmail,
+              prompt: trimmedMessage,
+              filename: activeCSVFile  // This already includes the file extension (e.g., "data.csv")
+            });
+          } else {
+            fallbackEndpoint = `${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`;
+            fallbackBody = JSON.stringify({ 
+              query: trimmedMessage
+            });
+          }
+          
           // Also include email in fallback attempt
-          const fallbackResponse = await fetch(`${ORIGINAL_API_URL}/generate-response/?email=${encodeURIComponent(userEmail)}`, {
+          const fallbackResponse = await fetch(fallbackEndpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Accept': '*/*',
               'Connection': 'keep-alive',
             },
-            body: requestBody,
+            body: fallbackBody,
             mode: 'cors'
           });
           
@@ -1338,7 +1589,18 @@ const ChatAssistantButton = () => {
           }
           
           const fallbackData = await fallbackResponse.json();
-          let fallbackText = fallbackData.response || 'No response received';
+          let fallbackText = '';
+
+          // Handle different response formats from the two endpoints
+          if (csvMode && fallbackData.text && Array.isArray(fallbackData.text)) {
+            // For /ask-csv/ endpoint, the response contains a "text" array
+            fallbackText = fallbackData.text.join('\n\n');
+            console.log('Received fallback response from ask-csv endpoint:', fallbackData);
+          } else {
+            // For /generate-response/ endpoint, the response contains a "response" field
+            fallbackText = fallbackData.response || 'No response received';
+            console.log('Received fallback response from generate-response endpoint:', fallbackData);
+          }
           
           // Also personalize the fallback response if it was a greeting
           if (isGreeting(trimmedMessage)) {
@@ -1361,7 +1623,8 @@ const ChatAssistantButton = () => {
               isStreaming: true,
               loadingIndicator: false,
               sourceDocument: fallbackData.source_document || fallbackData.source,
-              suggestedQuestions: fallbackData.suggested_questions
+              suggestedQuestions: fallbackData.suggested_questions,
+              isCsvResponse: csvMode // Set the CSV response flag when in CSV mode
             }
           ]);
 
@@ -1479,21 +1742,43 @@ const ChatAssistantButton = () => {
     };
 
     const handleDocumentUploaded = (event: CustomEvent) => {
-      const { fileName } = event.detail;
+      const { fileName, fileType } = event.detail;
+      const isPDF = fileType === 'PDF' || fileName.toLowerCase().endsWith('.pdf');
+      const isCSV = fileType === 'CSV' || fileName.toLowerCase().endsWith('.csv');
       
       // Open the chatbot
       setIsOpen(true);
       
-      // Activate knowledge base
+      // Activate appropriate mode based on file type
+      if (isPDF) {
+        // For PDF files, activate knowledge base
       setUseKnowledgeBase(true);
+        setCsvMode(false);
+        localStorage.setItem('useKnowledgeBase', 'true');
+        localStorage.setItem('csvMode', 'false');
+      } else if (isCSV) {
+        // For CSV files, activate CSV mode
+        setUseKnowledgeBase(false);
+        setCsvMode(true);
+        setActiveCSVFile(fileName);
+        localStorage.setItem('useKnowledgeBase', 'false');
+        localStorage.setItem('csvMode', 'true');
+        localStorage.setItem('activeCSVFile', fileName);
+        
+        // Add to available CSV files list
+        addCsvFileToAvailable(fileName);
+      }
       
       // Create a success message with the same format as in handleFileUpload
-      const successMessage = `PDF document **${fileName}** has been uploaded successfully.\n\nThe knowledge base has been automatically activated. You can now ask questions about your document content.`;
+      const successMessage = `${isPDF ? 'PDF document' : 'CSV file'} **${fileName}** has been uploaded successfully.\n\n${
+        isPDF ? 'The knowledge base has been automatically activated. You can now ask questions about your document content.' :
+        'CSV mode has been automatically activated. You can now ask questions about this CSV file.'
+      }`;
       
       // Add the message to chat history
       setChatHistory(prev => [...prev, { 
         type: 'user', 
-        text: `I'd like to analyze this PDF document: ${fileName}`
+        text: `I'd like to analyze this ${isPDF ? 'PDF document' : 'CSV file'}: ${fileName}`
       }]);
       
       // Add the success response message
@@ -1502,9 +1787,16 @@ const ChatAssistantButton = () => {
         text: successMessage,
         fileInfo: {
           filename: fileName,
-          fileType: 'PDF',
+          fileType: isPDF ? 'PDF' : 'CSV',
         }
       }]);
+      
+      // Set active file ID for CSV files
+      if (isCSV) {
+        setActiveFileId(fileName);
+      } else {
+        setActiveFileId(null);
+      }
     };
     
     window.addEventListener('suggested-question-click', handleSuggestedQuestionClick as EventListener);
@@ -1520,6 +1812,75 @@ const ChatAssistantButton = () => {
 
   // This was moved up in the component to avoid duplication
 
+  // Function to add a new CSV file to the available files list
+  const addCsvFileToAvailable = (fileName: string) => {
+    // Only add if it's not already in the list
+    setAvailableCSVFiles(prev => {
+      if (!prev.includes(fileName)) {
+        const newList = [...prev, fileName];
+        // Save to localStorage
+        try {
+          localStorage.setItem('availableCSVFiles', JSON.stringify(newList));
+        } catch (e) {
+          console.error('Failed to save available CSV files to localStorage', e);
+        }
+        return newList;
+      }
+      return prev;
+    });
+  };
+  
+  // Function to handle selecting a CSV file from the dropdown
+  const handleSelectCsvFile = (fileName: string) => {
+    setActiveCSVFile(fileName);
+    setCsvMode(true);
+    localStorage.setItem('activeCSVFile', fileName);
+    localStorage.setItem('csvMode', 'true');
+    setShowCsvDropdown(false);
+    
+    // Notify the user that the file has been selected
+    setChatHistory(prev => [...prev, { 
+      type: 'bot', 
+      text: `CSV mode activated for file: **${fileName}**. You can now ask questions about this data.`,
+      isCsvResponse: true
+    }]);
+  };
+
+  // Add event listener for clicking outside the CSV dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (csvDropdownRef.current && !csvDropdownRef.current.contains(event.target as Node)) {
+        setShowCsvDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Function to clear all CSV files from the available list
+  const clearCsvFilesList = () => {
+    setAvailableCSVFiles([]);
+    // If CSV mode is active, deactivate it
+    if (csvMode) {
+      setCsvMode(false);
+      localStorage.setItem('csvMode', 'false');
+    }
+    setActiveCSVFile(null);
+    localStorage.removeItem('availableCSVFiles');
+    localStorage.removeItem('activeCSVFile');
+    setShowCsvDropdown(false);
+
+    // Notify the user
+    setChatHistory(prev => [...prev, { 
+      type: 'bot', 
+      text: 'CSV file list has been cleared.',
+      isCsvResponse: false
+    }]);
+  };
+
   return (
     <>
       {/* Hidden file input */}
@@ -1528,7 +1889,7 @@ const ChatAssistantButton = () => {
         ref={fileInputRef}
         onChange={handleFileUpload}
         className="hidden"
-        accept=".pdf"
+        accept=".pdf,.csv"
       />
     
       {/* Chat Window */}
@@ -1617,6 +1978,13 @@ const ChatAssistantButton = () => {
                         }]);
                       }} 
                     />
+                    
+                    <WelcomeCard 
+                      icon={Table} 
+                      title="CSV Data" 
+                      description="Upload & query CSV files." 
+                      onClick={triggerFileUpload}
+                    />
                   </div>
                 </motion.div>
               ) : (
@@ -1634,7 +2002,7 @@ const ChatAssistantButton = () => {
                   variant="ghost" 
                   size="icon" 
                   className="h-8 w-8 text-muted-foreground hover:text-primary flex-shrink-0" 
-                  aria-label="Upload PDF document"
+                  aria-label="Upload document or data file"
                   onClick={triggerFileUpload}
                   disabled={isLoading}
                 >
@@ -1650,10 +2018,105 @@ const ChatAssistantButton = () => {
                     )}
                     aria-label={useKnowledgeBase ? "Deactivate knowledge base" : "Activate knowledge base"}
                     title={useKnowledgeBase ? "Knowledge base active" : "Activate knowledge base"}
-                  disabled={isLoading}
+                  disabled={isLoading || csvMode}
                 >
                   <Database className="h-4 w-4" />
                 </Button>
+                
+                {/* CSV Button with Dropdown */}
+                <div className="flex flex-col items-center relative">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      // Just toggle the dropdown visibility
+                      setShowCsvDropdown(prev => !prev);
+                      
+                      // Don't toggle CSV mode here - we handle that separately
+                      // Allow user to click specific files or the deactivate button
+                    }}
+                    className={cn(
+                      "h-8 w-8 flex-shrink-0 hover:text-primary",
+                      csvMode ? "text-primary bg-primary/20 ring-1 ring-primary" : "text-muted-foreground"
+                    )}
+                    aria-label={csvMode ? "CSV files menu" : "CSV files menu"}
+                    title={csvMode ? "CSV mode active - Click to view files" : "View CSV files"}
+                    disabled={isLoading || useKnowledgeBase}
+                  >
+                    <Table2 className="h-4 w-4" />
+                  </Button>
+                  
+                  {/* Show active file name */}
+                  {csvMode && activeCSVFile && (
+                    <div className="text-[7px] text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[40px]" title={activeCSVFile}>
+                      {activeCSVFile.split('.')[0]}
+                    </div>
+                  )}
+                  
+                  {/* CSV files dropdown */}
+                  {showCsvDropdown && (
+                    <div 
+                      ref={csvDropdownRef}
+                      className="absolute bottom-full left-0 mb-2 w-48 bg-card shadow-lg rounded-md border border-border p-1 z-10"
+                      style={{ overscrollBehavior: 'contain' }}
+                    >
+                      <div className="p-2 mb-1 text-xs font-medium text-muted-foreground border-b border-border flex justify-between items-center">
+                        <span>Select CSV File</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                          className="text-muted-foreground hover:text-foreground"
+                          title="Refresh CSV file list"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </button>
+                      </div>
+                      
+                      {/* CSV Mode Controls */}
+                      {csvMode && (
+                        <div className="px-2 py-1.5 text-xs border-b border-border">
+                          <button 
+                            onClick={() => {
+                              toggleCsvMode(); // Will deactivate CSV mode
+                              setShowCsvDropdown(false);
+                            }}
+                            className="w-full text-left text-xs py-1.5 px-2.5 rounded bg-destructive/10 hover:bg-destructive/20 text-destructive transition-colors"
+                          >
+                            Deactivate CSV Mode
+                          </button>
+                        </div>
+                      )}
+                      
+                      <div className="max-h-48 overflow-y-auto py-1 overflow-x-hidden" style={{ scrollbarWidth: 'thin' }}>
+                        {availableCSVFiles.length > 0 ? (
+                          availableCSVFiles.map((file, index) => (
+                            <button
+                              key={index}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectCsvFile(file);
+                              }}
+                              className={cn(
+                                "w-full text-left text-xs py-1.5 px-2.5 rounded hover:bg-secondary text-foreground transition-colors",
+                                activeCSVFile === file && "bg-secondary font-medium"
+                              )}
+                            >
+                              {file}
+                            </button>
+                          ))
+                        ) : (
+                          <div className="py-3 px-2 text-xs text-muted-foreground text-center">
+                            No CSV files available.
+                            <br />
+                            <span className="text-primary">Upload a CSV file</span> to get started.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
                 <div className="relative flex-grow">
                   <input
                     ref={inputRef}
@@ -1661,7 +2124,7 @@ const ChatAssistantButton = () => {
                     value={message}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask anything..."
+                    placeholder={csvMode ? "Ask about your CSV data..." : "Ask anything..."}
                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 pr-10"
                     disabled={isLoading}
                   />
@@ -1733,11 +2196,18 @@ const ChatAssistantButton = () => {
 };
 
 // Export a function to add file upload messages to chat history
-export const addDocumentUploadMessage = (fileName: string) => {
+export const addDocumentUploadMessage = (fileName: string, fileType?: 'PDF' | 'CSV') => {
+  // Determine file type if not explicitly provided
+  const detectedType = fileType || (
+    fileName.toLowerCase().endsWith('.pdf') ? 'PDF' :
+    fileName.toLowerCase().endsWith('.csv') ? 'CSV' : 'PDF' // Default to PDF if unknown
+  );
+  
   // Create event with details about the uploaded document
   const event = new CustomEvent('document-uploaded', {
     detail: {
       fileName: fileName,
+      fileType: detectedType,
       timestamp: new Date().toISOString()
     }
   });
