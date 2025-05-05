@@ -1,5 +1,5 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
-import { Paperclip, Send, RefreshCw, Database, Table2, Loader2, Globe, Trash2 } from 'lucide-react';
+import { Plus, Send, RefreshCw, Database, Table2, Loader2, Globe, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import axios from 'axios';
@@ -394,7 +394,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onClick={triggerFileUpload}
             disabled={isLoading}
           >
-            <Paperclip className="h-4 w-4 mr-1" />
+            <Plus className="h-4 w-4 mr-1" />
             {isFullscreen && <span className="text-xs">Upload</span>}
           </Button>
           
