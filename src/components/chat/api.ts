@@ -105,6 +105,7 @@ export const convertHistoryToChatMessages = (history: any[]) => {
         chatMessages.push({
           type: 'bot',
           text: history[i + 1].content,
+          suggestedQuestions: []
           // Add any additional properties if available in the data
         });
         i++; // Skip the assistant message we just processed
@@ -427,6 +428,9 @@ export const chatWithWebsite = async (email: string, url: string, prompt: string
     
     console.log(`Sending request to chat with website: ${url}`);
     
+    // Keep this for backwards compatibility but don't use it
+    const embeddingsCreated = false;
+    
     // Try multiple approaches with different parameter names
     
     // Approach 1: FormData with email/url/prompt
@@ -574,4 +578,60 @@ export const chatWithWebsite = async (email: string, url: string, prompt: string
       error: error instanceof Error ? error.message : String(error)
     };
   }
+};
+
+// Function to get list of embedded website URLs for a specific user - No longer used
+// Keeping this code commented out for reference
+/*
+export const getEmbeddedWebsiteUrls = async (userEmail: string) => {
+  if (!userEmail) {
+    return {
+      success: false,
+      error: 'Missing required parameter: email'
+    };
+  }
+
+  try {
+    // Use the same endpoint but with a special flag to get embedded URLs
+    const chatWebsiteEndpoint = `${ORIGINAL_API_URL}/chat-with-website/`;
+    
+    console.log(`Fetching embedded website URLs for user: ${userEmail}`);
+    
+    // Send request to get embedded URLs
+    const formData = new FormData();
+    formData.append('email', userEmail);
+    formData.append('get_embedded_urls', 'true');
+    
+    const response = await fetch(chatWebsiteEndpoint, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      headers: {
+        'Accept': 'application/json',
+        'Origin': window.location.origin,
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Retrieved embedded website URLs:', data);
+      return {
+        success: true,
+        embeddedUrls: data.embedded_urls || []
+      };
+    } else {
+      console.error(`Failed to fetch embedded URLs (${response.status})`);
+      return {
+        success: false,
+        error: `Failed to fetch embedded URLs (${response.status})`
+      };
+    }
+  } catch (error) {
+    console.error('Error fetching embedded website URLs:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 }; 
+*/ 

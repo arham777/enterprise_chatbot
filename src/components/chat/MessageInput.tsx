@@ -2,6 +2,10 @@ import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
 import { Paperclip, Send, RefreshCw, Database, Table2, Loader2, Globe, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import axios from 'axios';
+
+// Define API URL constant
+const API_URL = import.meta.env.VITE_API_URL || 'http://103.18.20.205:8070';
 
 interface MessageInputProps {
   onSendMessage: () => void;
@@ -31,8 +35,28 @@ interface MessageInputProps {
   handleSelectCsvFile: (fileName: string) => void;
   handleSelectWebsite: (url: string) => void;
   addWebsiteUrlToAvailable: (url: string) => void;
+  removeWebsiteUrl: (url: string) => void;
   inputRef: React.RefObject<HTMLInputElement>;
   isFullscreen?: boolean;
+  isAuthenticated: boolean;
+  userEmail: string;
+}
+
+// Define the document type
+type DocumentItem = string | {
+  name?: string;
+  fileName?: string;
+  filename?: string;
+  [key: string]: unknown;
+};
+
+// Define the response type
+interface DocumentsResponse {
+  documents?: DocumentItem[];
+  files?: DocumentItem[];
+  items?: DocumentItem[];
+  data?: DocumentItem[];
+  [key: string]: unknown;
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -58,18 +82,175 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   setShowWebsiteModal,
   websiteModalRef,
   csvDropdownRef,
-  availableCSVFiles,
+  availableCSVFiles: propAvailableCSVFiles,
   availableWebsiteUrls,
   handleSelectCsvFile,
   handleSelectWebsite,
   addWebsiteUrlToAvailable,
+  removeWebsiteUrl,
   inputRef,
-  isFullscreen = false
+  isFullscreen = false,
+  isAuthenticated,
+  userEmail
 }) => {
   const [tempWebsiteUrl, setTempWebsiteUrl] = useState(activeWebsiteUrl || "");
   const [showWebsiteDropdown, setShowWebsiteDropdown] = useState(false);
+  const [csvFiles, setCsvFiles] = useState<string[]>([]);
+  const [isFetchingCsvFiles, setIsFetchingCsvFiles] = useState(false);
   const websiteDropdownRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Memoize the fetchCsvFiles function to avoid dependency issues
+  const fetchCsvFiles = React.useCallback(async () => {
+    if (!isAuthenticated || !userEmail) {
+      console.log('Not fetching CSV files - user not authenticated or email missing');
+      return;
+    }
+    
+    setIsFetchingCsvFiles(true);
+    try {
+      // Use the same endpoint format as in DocumentSidebar
+      const endpoint = `${API_URL}/get-all-documents/?email=${encodeURIComponent(userEmail)}`;
+      console.log('Fetching CSV files from endpoint:', endpoint);
+      
+      const response = await axios.get(endpoint);
+      console.log('CSV files response status:', response.status);
+      console.log('CSV files response data type:', typeof response.data);
+      
+      // If response is HTML, log a portion of it to debug
+      if (typeof response.data === 'string' && response.data.trim().startsWith('<!DOCTYPE')) {
+        console.error('Received HTML response instead of JSON. First 100 chars:',
+          response.data.substring(0, 100));
+        setCsvFiles([]);
+        return;
+      }
+      
+      if (typeof response.data === 'string') {
+        try {
+          // Try parsing if it's a JSON string
+          const parsedData = JSON.parse(response.data);
+          console.log('Parsed string response:', parsedData);
+          
+          if (Array.isArray(parsedData)) {
+            const filteredCsvFiles = parsedData
+              .filter((file: string) => 
+                typeof file === 'string' && 
+                file.toLowerCase().endsWith('.csv') && 
+                file !== 'chat_history.csv')
+              .map((file: string) => file);
+            
+            console.log('Filtered CSV files from string:', filteredCsvFiles);
+            setCsvFiles(filteredCsvFiles);
+            return;
+          }
+        } catch (parseError) {
+          console.error('Error parsing response string:', parseError);
+          // If we can't parse the string and it's HTML-like, log more details
+          if (response.data.includes('<html') || response.data.includes('<!DOCTYPE')) {
+            console.error('Response appears to be HTML, not JSON. This indicates an error with the endpoint.');
+          } else {
+            console.error('First 100 characters of response:', response.data.substring(0, 100));
+          }
+          setCsvFiles([]);
+          return;
+        }
+      }
+      
+      // Check the structure of the response data
+      if (response.data) {
+        let csvFilesData: DocumentItem[] = [];
+        
+        // Handle different response formats
+        if (Array.isArray(response.data)) {
+          console.log('Response is an array with', response.data.length, 'items');
+          csvFilesData = response.data;
+        } else if (typeof response.data === 'object' && response.data !== null) {
+          console.log('Response is an object with keys:', Object.keys(response.data).join(', '));
+          
+          // Try different possible response structures
+          const data = response.data as DocumentsResponse;
+          
+          if (data.documents && Array.isArray(data.documents)) {
+            console.log('Found documents array with', data.documents.length, 'items');
+            csvFilesData = data.documents;
+          } else if (data.files && Array.isArray(data.files)) {
+            console.log('Found files array with', data.files.length, 'items');
+            csvFilesData = data.files;
+          } else if (data.items && Array.isArray(data.items)) {
+            console.log('Found items array with', data.items.length, 'items');
+            csvFilesData = data.items;
+          } else if (data.data && Array.isArray(data.data)) {
+            console.log('Found data array with', data.data.length, 'items');
+            csvFilesData = data.data;
+          }
+        }
+        
+        if (csvFilesData.length === 0) {
+          console.log('No CSV data found in response');
+        } else {
+          console.log('CSV data before filtering:', csvFilesData);
+        }
+        
+        // Filter for CSV files only and exclude chat_history.csv
+        const filteredCsvFiles = csvFilesData
+          .filter((file: DocumentItem) => {
+            // Handle if file is an object or string
+            const fileName = typeof file === 'string' ? file : (file.name || file.fileName || file.filename || '');
+            const isCSV = fileName.toLowerCase().endsWith('.csv');
+            const isNotChatHistory = fileName !== 'chat_history.csv';
+            const result = isCSV && isNotChatHistory;
+            console.log(`File "${fileName}": isCSV=${isCSV}, isNotChatHistory=${isNotChatHistory}, included=${result}`);
+            return result;
+          })
+          .map((file: DocumentItem) => typeof file === 'string' ? file : (file.name || file.fileName || file.filename || ''));
+        
+        console.log('Filtered CSV files:', filteredCsvFiles);
+        setCsvFiles(filteredCsvFiles);
+      } else {
+        console.log('Response data is empty or invalid');
+      }
+    } catch (error) {
+      console.error('Error fetching CSV files:', error);
+      
+      // Check if the error is Axios error and log more details
+      if (axios.isAxiosError(error)) {
+        console.error('Status:', error.response?.status);
+        console.error('Status text:', error.response?.statusText);
+        console.error('Error message:', error.message);
+        
+        // Log the response data if available
+        if (error.response?.data) {
+          if (typeof error.response.data === 'string') {
+            console.error('Response data (first 100 chars):', error.response.data.substring(0, 100));
+          } else {
+            console.error('Response data:', error.response.data);
+          }
+        }
+      }
+      
+      setCsvFiles([]);
+    } finally {
+      setIsFetchingCsvFiles(false);
+    }
+  }, [isAuthenticated, userEmail]);
+
+  // Add useEffect to fetch CSV files when component mounts
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchCsvFiles();
+    }
+  }, [isAuthenticated, fetchCsvFiles]);
+
+  // Make sure showCsvDropdown triggers fetchCsvFiles
+  const handleToggleCsvDropdown = () => {
+    const newState = !showCsvDropdown;
+    setShowCsvDropdown(newState);
+    setShowWebsiteDropdown(false);
+    
+    if (newState) {
+      fetchCsvFiles();
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
@@ -101,6 +282,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const validateAndAddWebsite = () => {
+    // Don't allow adding websites if user is not authenticated
+    if (!isAuthenticated || !userEmail) {
+      alert("Please sign in to add websites");
+      setShowWebsiteModal(false);
+      return;
+    }
+    
     if (tempWebsiteUrl) {
       try {
         // Validate URL
@@ -139,6 +327,39 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Add function to handle website search errors
+  const handleWebsiteSearchError = (url: string, errorMessage: string) => {
+    // If error contains indication that embedding failed
+    if (errorMessage.includes("failed") || 
+        errorMessage.includes("unavailable") || 
+        errorMessage.includes("incorrect")) {
+      // Remove the problematic URL
+      removeWebsiteUrl(url);
+      
+      // Also deactivate website mode if the current URL is the one that failed
+      if (activeWebsiteUrl === url) {
+        setActiveWebsiteUrl(null);
+        if (websiteMode) {
+          toggleWebsiteMode();
+        }
+      }
+      
+      // Notify user
+      alert(`The website "${url}" could not be embedded and has been removed from your list.`);
+    }
+  };
+
+  // Pass this handler to parent component through onSendMessage
+  const handleSendMessage = () => {
+    // If in website mode and there's an error, check for embedding issues
+    if (websiteMode && activeWebsiteUrl) {
+      // The parent component should call handleWebsiteSearchError if embedding fails
+      onSendMessage();
+    } else {
+      onSendMessage();
+    }
+  };
 
   return (
     <div className="flex flex-col gap-2 w-full">
@@ -198,10 +419,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           <Button
             variant="ghost"
             size={isFullscreen ? "sm" : "icon"}
-            onClick={() => {
-              setShowCsvDropdown(prev => !prev);
-              setShowWebsiteDropdown(false);
-            }}
+            onClick={handleToggleCsvDropdown}
             className={cn(
               "flex-shrink-0 hover:text-primary",
               csvMode ? "text-primary bg-primary/20 ring-1 ring-primary" : "text-muted-foreground",
@@ -288,7 +506,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               isFullscreen ? "h-8 rounded-full px-4" : "h-8 w-8 rounded-full"
             )}
             disabled={message.trim() === '' || isLoading}
-            onClick={onSendMessage}
+            onClick={handleSendMessage}
             aria-label="Send message"
           >
             {isLoading ? (
@@ -313,26 +531,43 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           className="absolute bottom-24 left-16 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-48"
         >
           <div className="text-sm font-medium mb-2">Available CSV Files</div>
-          {availableCSVFiles.length === 0 ? (
-            <div className="text-xs text-muted-foreground italic">No CSV files available. Upload a CSV file first.</div>
+          {isFetchingCsvFiles ? (
+            <div className="flex justify-center py-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+            </div>
+          ) : csvFiles.length === 0 ? (
+            <div className="text-xs text-muted-foreground italic">
+              No CSV files available. Upload a CSV file first.
+            </div>
           ) : (
             <div className="max-h-40 overflow-y-auto">
-              {availableCSVFiles.map((file, index) => (
+              {csvFiles.map((file, index) => (
                 <div
                   key={index}
-                  className={`text-sm px-2 py-1 rounded cursor-pointer hover:bg-accent ${activeCSVFile === file ? 'bg-accent' : ''}`}
+                  className={`text-sm px-2 py-1 rounded cursor-pointer hover:bg-accent flex items-center ${activeCSVFile === file ? 'bg-accent' : ''}`}
                   onClick={() => {
                     handleSelectCsvFile(file);
                     setShowCsvDropdown(false);
                   }}
                 >
-                  {file}
+                  <div className="text-primary mr-1">
+                    <Table2 className="h-3 w-3" />
+                  </div>
+                  <span className="truncate" title={file}>
+                    {file}
+                  </span>
                 </div>
               ))}
             </div>
           )}
           <div className="mt-2 pt-1 border-t">
-            <Button variant="outline" size="sm" className="w-full text-xs" onClick={toggleCsvMode}>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="w-full text-xs" 
+              onClick={toggleCsvMode}
+              disabled={csvFiles.length === 0 && !csvMode}
+            >
               {csvMode ? 'Deactivate CSV mode' : 'Activate CSV mode'}
             </Button>
           </div>
@@ -346,37 +581,59 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           className="absolute bottom-24 left-16 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-72"
         >
           <div className="text-sm font-medium mb-2">Available Websites</div>
-          <div className="max-h-40 overflow-y-auto">
-            {availableWebsiteUrls.map((url, index) => (
-              <div
-                key={index}
-                className={`text-sm px-2 py-1 rounded cursor-pointer hover:bg-accent flex justify-between items-center ${activeWebsiteUrl === url ? 'bg-accent' : ''}`}
-              >
-                <span 
-                  className="truncate flex-1"
-                  title={url}
-                  onClick={() => {
-                    handleSelectWebsite(url);
-                    setShowWebsiteDropdown(false);
-                  }}
+          {availableWebsiteUrls.length === 0 ? (
+            <div className="text-xs text-muted-foreground italic">No websites available. Add a website to search.</div>
+          ) : (
+            <div className="max-h-40 overflow-y-auto">
+              {availableWebsiteUrls.map((url, index) => (
+                <div
+                  key={index}
+                  className={`text-sm px-2 py-1 rounded cursor-pointer hover:bg-accent flex justify-between items-center ${activeWebsiteUrl === url ? 'bg-accent' : ''}`}
                 >
-                  {(() => {
-                    try {
-                      return new URL(url).hostname;
-                    } catch {
-                      return url;
-                    }
-                  })()}
-                </span>
-              </div>
-            ))}
-          </div>
+                  <span 
+                    className="truncate flex-1"
+                    title={url}
+                    onClick={() => {
+                      handleSelectWebsite(url);
+                      setShowWebsiteDropdown(false);
+                    }}
+                  >
+                    {(() => {
+                      try {
+                        return new URL(url).hostname;
+                      } catch {
+                        return url;
+                      }
+                    })()}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs bg-primary/20 text-primary px-1 rounded">
+                      Embedded
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 hover:bg-destructive/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeWebsiteUrl(url);
+                      }}
+                      title="Remove website"
+                    >
+                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-2 pt-1 border-t flex flex-col gap-1">
             <Button 
               variant="outline" 
               size="sm" 
               className="w-full text-xs"
               onClick={() => {
+                setTempWebsiteUrl("");
                 setShowWebsiteModal(true);
                 setShowWebsiteDropdown(false);
               }}
@@ -411,7 +668,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               value={tempWebsiteUrl}
               onChange={(e) => setTempWebsiteUrl(e.target.value)}
             />
-            <div className="text-xs text-muted-foreground">Note: First request may take longer as embeddings are created.</div>
+            <div className="text-xs text-muted-foreground">
+              Note: First request may take longer as embeddings are created.
+              {availableWebsiteUrls.length > 0 && (
+                <div className="mt-1 text-xs text-primary-foreground bg-primary/20 p-1 rounded">
+                  You already have {availableWebsiteUrls.length} website{availableWebsiteUrls.length !== 1 ? 's' : ''} with embeddings ready to use.
+                </div>
+              )}
+            </div>
           </div>
           <div className="mt-2 pt-1 border-t flex gap-1">
             <Button 

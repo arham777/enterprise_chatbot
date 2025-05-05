@@ -6,10 +6,8 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
   // Initialize knowledge base state from localStorage if available, default to false
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(() => {
     try {
-      // Only use saved state if user is authenticated
-      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
-      const savedState = localStorage.getItem('useKnowledgeBase');
-      return isAuthenticatedUser && savedState === 'true';
+      // Default to false for all users
+      return false;
     } catch (e) {
       return false; // Default to false if localStorage access fails
     }
@@ -18,9 +16,8 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
   // Initialize CSV mode from localStorage if available, default to false
   const [csvMode, setCsvMode] = useState(() => {
     try {
-      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
-      const savedState = localStorage.getItem('csvMode');
-      return isAuthenticatedUser && savedState === 'true';
+      // Default to false for all users
+      return false;
     } catch (e) {
       return false; // Default to false if localStorage access fails
     }
@@ -29,9 +26,8 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
   // Initialize website mode from localStorage if available, default to false
   const [websiteMode, setWebsiteMode] = useState(() => {
     try {
-      const isAuthenticatedUser = localStorage.getItem('isAuthenticated') === 'true';
-      const savedState = localStorage.getItem('websiteMode');
-      return isAuthenticatedUser && savedState === 'true';
+      // Default to false for all users
+      return false;
     } catch (e) {
       return false; // Default to false if localStorage access fails
     }
@@ -65,15 +61,8 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     }
   });
 
-  // Track available website URLs
-  const [availableWebsiteUrls, setAvailableWebsiteUrls] = useState<string[]>(() => {
-    try {
-      const savedUrls = localStorage.getItem('availableWebsiteUrls');
-      return savedUrls ? JSON.parse(savedUrls) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // Track available website URLs - user specific
+  const [availableWebsiteUrls, setAvailableWebsiteUrls] = useState<string[]>([]);
 
   // Initialize with empty array first, we'll load from sessionStorage in useEffect
   const [chatHistory, setChatHistory] = useState<ChatMessageType[]>([]);
@@ -87,6 +76,54 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
   const sessionId = useRef<string>(localStorage.getItem('sessionId') || `session_${Date.now()}`);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
 
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    // Load knowledge base setting
+    const knowledgeBaseSetting = localStorage.getItem('useKnowledgeBase');
+    if (knowledgeBaseSetting === 'true') {
+      setUseKnowledgeBase(true);
+    }
+    
+    // Load CSV mode setting
+    const csvModeSetting = localStorage.getItem('csvMode');
+    if (csvModeSetting === 'true') {
+      setCsvMode(true);
+    }
+    
+    // Load active CSV file
+    const storedActiveCSVFile = localStorage.getItem('activeCSVFile');
+    if (storedActiveCSVFile) {
+      setActiveCSVFile(storedActiveCSVFile);
+    }
+    
+    // Load available CSV files
+    try {
+      const storedCSVFiles = localStorage.getItem('availableCSVFiles');
+      if (storedCSVFiles) {
+        const parsedFiles = JSON.parse(storedCSVFiles);
+        if (Array.isArray(parsedFiles)) {
+          setAvailableCSVFiles(parsedFiles);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load available CSV files from localStorage', e);
+    }
+    
+    // Load website mode setting
+    const websiteModeSetting = localStorage.getItem('websiteMode');
+    if (websiteModeSetting === 'true') {
+      setWebsiteMode(true);
+    }
+    
+    // Load active website URL
+    const storedActiveWebsiteUrl = localStorage.getItem('activeWebsiteUrl');
+    if (storedActiveWebsiteUrl) {
+      setActiveWebsiteUrl(storedActiveWebsiteUrl);
+    }
+    
+    // Website URLs are now loaded in the authentication state change effect
+  }, []);
+
   // Effect to save chat history to session storage whenever it changes
   useEffect(() => {
     if (chatHistory.length > 0 && isAuthenticated && userEmail) {
@@ -95,18 +132,86 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     }
   }, [chatHistory, isAuthenticated, userEmail]);
 
-  // Watch for authentication state changes and deactivate knowledge base when signed out
+  // Effect to handle authentication changes and clearing user data
   useEffect(() => {
-    // If user is not authenticated, deactivate the knowledge base
+    // If user is not authenticated, deactivate the knowledge base and clear user-specific data
     if (!isAuthenticated) {
+      // Deactivate all modes
       setUseKnowledgeBase(false);
-      localStorage.removeItem('useKnowledgeBase'); // Remove from localStorage
+      setCsvMode(false);
+      setWebsiteMode(false);
+      
+      // Clear active items
+      setActiveWebsiteUrl(null);
+      setActiveCSVFile(null);
+      
+      // Clear the available website URLs list so they don't appear for other users
+      setAvailableWebsiteUrls([]);
+      
+      // Remove from localStorage
+      localStorage.removeItem('useKnowledgeBase');
+      localStorage.removeItem('csvMode');
+      localStorage.removeItem('websiteMode');
+      localStorage.removeItem('activeCSVFile');
+      localStorage.removeItem('activeWebsiteUrl');
+      
+      // If we have a previous user email, clear their specific data
+      const prevUserEmail = localStorage.getItem('prevUserEmail');
+      if (prevUserEmail) {
+        localStorage.removeItem(`availableWebsiteUrls_${prevUserEmail}`);
+      }
       
       // If we have access to the backend, also update it there
       if (userEmail) {
+        localStorage.setItem('prevUserEmail', userEmail); // Store previous email for cleanup
         updateKnowledgeBaseState(false, userEmail).catch(error => {
           console.error('Failed to deactivate knowledge base on sign out:', error);
         });
+      }
+    } else if (isAuthenticated && userEmail) {
+      // User is authenticated - load their specific website URLs
+      try {
+        // Set the current user email for later cleanup if needed
+        localStorage.setItem('prevUserEmail', userEmail);
+        
+        // Load available website URLs
+        const availableWebsitesKey = `availableWebsiteUrls_${userEmail}`;
+        const storedAvailableUrls = localStorage.getItem(availableWebsitesKey);
+        
+        // Load embedded websites URLs (URLs that have successful embeddings)
+        const embeddedWebsitesKey = `embeddedWebsites_${userEmail}`;
+        const storedEmbeddedUrls = localStorage.getItem(embeddedWebsitesKey);
+        
+        // Combine both sources, prioritizing the embedded websites
+        let combinedUrls: string[] = [];
+        
+        if (storedAvailableUrls) {
+          try {
+            const parsedUrls = JSON.parse(storedAvailableUrls);
+            if (Array.isArray(parsedUrls)) {
+              combinedUrls = [...parsedUrls];
+            }
+          } catch (e) {
+            console.error('Failed to parse available website URLs', e);
+          }
+        }
+        
+        if (storedEmbeddedUrls) {
+          try {
+            const parsedUrls = JSON.parse(storedEmbeddedUrls);
+            if (Array.isArray(parsedUrls)) {
+              // Add embedded URLs and remove duplicates
+              combinedUrls = [...new Set([...combinedUrls, ...parsedUrls])];
+            }
+          } catch (e) {
+            console.error('Failed to parse embedded website URLs', e);
+          }
+        }
+        
+        // Update the state with user-specific URLs
+        setAvailableWebsiteUrls(combinedUrls);
+      } catch (e) {
+        console.error('Failed to load user-specific website URLs:', e);
       }
     }
   }, [isAuthenticated, userEmail]);
@@ -125,6 +230,11 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
             // Mark history as loaded since we found it in sessionStorage
             setHistoryLoadAttempted(true);
             console.log('Loaded chat history from sessionStorage for user:', userEmail);
+            
+            // Ensure buttons are deactivated by default
+            setUseKnowledgeBase(false);
+            setCsvMode(false);
+            setWebsiteMode(false);
           } else {
             // If cached history exists but is empty, attempt to load from backend
             setHistoryLoadAttempted(false);
@@ -417,7 +527,8 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     setChatHistory(prev => [...prev, { 
       type: 'bot', 
       text: `CSV mode activated for file: **${fileName}**. You can now ask questions about this data.`,
-      isCsvResponse: true
+      isCsvResponse: true,
+      suggestedQuestions: []
     }]);
   };
 
@@ -437,22 +548,43 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     setChatHistory(prev => [...prev, { 
       type: 'bot', 
       text: 'CSV file list has been cleared.',
-      isCsvResponse: false
+      isCsvResponse: false,
+      suggestedQuestions: []
     }]);
   };
 
   // Function to add a new website URL to the available URLs list
   const addWebsiteUrlToAvailable = (url: string) => {
-    // Only add if it's not already in the list
+    // Only add if it's not already in the list and user is authenticated
+    if (!isAuthenticated || !userEmail) return;
+    
     setAvailableWebsiteUrls(prev => {
       if (!prev.includes(url)) {
         const newList = [...prev, url];
-        // Save to localStorage
+        
+        // Save to both regular availability list and embedded websites list
         try {
-          localStorage.setItem('availableWebsiteUrls', JSON.stringify(newList));
+          // Regular availability list
+          localStorage.setItem(`availableWebsiteUrls_${userEmail}`, JSON.stringify(newList));
+          
+          // Embedded websites list (for tracking which have successfully created embeddings)
+          const embeddedKey = `embeddedWebsites_${userEmail}`;
+          const currentEmbedded = localStorage.getItem(embeddedKey);
+          let embeddedList = [];
+          
+          if (currentEmbedded) {
+            embeddedList = JSON.parse(currentEmbedded);
+            if (!Array.isArray(embeddedList)) embeddedList = [];
+          }
+          
+          if (!embeddedList.includes(url)) {
+            embeddedList.push(url);
+            localStorage.setItem(embeddedKey, JSON.stringify(embeddedList));
+          }
         } catch (e) {
-          console.error('Failed to save available website URLs to localStorage', e);
+          console.error('Failed to save website URLs to localStorage', e);
         }
+        
         return newList;
       }
       return prev;
@@ -470,12 +602,15 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     setChatHistory(prev => [...prev, { 
       type: 'bot', 
       text: `Website mode activated for: **${url}**. You can now ask questions about this website.`,
-      isWebsiteResponse: true
+      isWebsiteResponse: true,
+      suggestedQuestions: []
     }]);
   };
 
   // Function to clear all website URLs from the available list
   const clearWebsiteUrlsList = () => {
+    if (!isAuthenticated || !userEmail) return;
+    
     setAvailableWebsiteUrls([]);
     // If website mode is active, deactivate it
     if (websiteMode) {
@@ -483,15 +618,62 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
       localStorage.setItem('websiteMode', 'false');
     }
     setActiveWebsiteUrl(null);
-    localStorage.removeItem('availableWebsiteUrls');
+    
+    // Clear both localStorage keys
+    localStorage.removeItem(`availableWebsiteUrls_${userEmail}`);
+    localStorage.removeItem(`embeddedWebsites_${userEmail}`);
     localStorage.removeItem('activeWebsiteUrl');
 
     // Notify the user
     setChatHistory(prev => [...prev, { 
       type: 'bot', 
       text: 'Website URL list has been cleared.',
-      isWebsiteResponse: false
+      isWebsiteResponse: false,
+      suggestedQuestions: []
     }]);
+  };
+
+  // Function to remove a single website URL from available list
+  const removeWebsiteUrl = (url: string) => {
+    if (!isAuthenticated || !userEmail) return;
+    
+    // Remove from state
+    setAvailableWebsiteUrls(prev => {
+      const newList = prev.filter(item => item !== url);
+      
+      // Save updated list to localStorage
+      try {
+        // Update regular availability list
+        localStorage.setItem(`availableWebsiteUrls_${userEmail}`, JSON.stringify(newList));
+        
+        // Update embedded websites list
+        const embeddedKey = `embeddedWebsites_${userEmail}`;
+        const currentEmbedded = localStorage.getItem(embeddedKey);
+        
+        if (currentEmbedded) {
+          const embeddedList = JSON.parse(currentEmbedded);
+          if (Array.isArray(embeddedList)) {
+            const updatedEmbedded = embeddedList.filter(item => item !== url);
+            localStorage.setItem(embeddedKey, JSON.stringify(updatedEmbedded));
+          }
+        }
+      } catch (e) {
+        console.error('Failed to update website URLs in localStorage', e);
+      }
+      
+      return newList;
+    });
+    
+    // If this is the active URL, deactivate website mode
+    if (activeWebsiteUrl === url) {
+      setActiveWebsiteUrl(null);
+      localStorage.removeItem('activeWebsiteUrl');
+      
+      if (websiteMode) {
+        setWebsiteMode(false);
+        localStorage.setItem('websiteMode', 'false');
+      }
+    }
   };
 
   return {
@@ -527,6 +709,7 @@ export const useChatState = (userEmail: string | null, isAuthenticated: boolean)
     addWebsiteUrlToAvailable,
     handleSelectWebsite,
     clearWebsiteUrlsList,
+    removeWebsiteUrl,
     isResetting
   };
 }; 

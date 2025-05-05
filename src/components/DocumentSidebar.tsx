@@ -407,16 +407,6 @@ const DocumentSidebar = () => {
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete All Files
                   </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={triggerFileUpload}
-                    className="w-full"
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Upload New Document
-                  </Button>
                 </>
               ) : (
                 <Button 

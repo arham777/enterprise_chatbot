@@ -94,6 +94,7 @@ const ChatAssistantButton = () => {
     addWebsiteUrlToAvailable,
     handleSelectWebsite,
     clearWebsiteUrlsList,
+    removeWebsiteUrl,
     isResetting
   } = useChatState(userEmail, isAuthenticated);
 
@@ -263,20 +264,26 @@ const ChatAssistantButton = () => {
       }`;
       
       // Add the message to chat history
-      setChatHistory(prev => [...prev, { 
-        type: 'user', 
-        text: `I'd like to analyze this ${isPDF ? 'PDF document' : 'CSV file'}: ${fileName}`
-      }]);
+      setChatHistory(prev => [
+        ...prev,
+        {
+          type: 'user',
+          text: `I'd like to analyze this ${isPDF ? 'PDF document' : 'CSV file'}: ${fileName}`
+        }
+      ]);
       
       // Add the success response message
-      setChatHistory(prev => [...prev, { 
-        type: 'bot',
-        text: successMessage,
-        fileInfo: {
-          filename: fileName,
-          fileType: isPDF ? 'PDF' : 'CSV',
+      setChatHistory(prev => [
+        ...prev,
+        {
+          type: 'bot',
+          text: successMessage,
+          fileInfo: {
+            filename: fileName,
+            fileType: isPDF ? 'PDF' : 'CSV',
+          }
         }
-      }]);
+      ]);
       
       // Set active file ID for CSV files
       if (isCSV) {
@@ -311,16 +318,16 @@ const ChatAssistantButton = () => {
   // Function to check if a message is a greeting
   const isGreeting = (message: string): boolean => {
     const greetingPatterns = [
-      /^hi$/i,
-      /^hello$/i,
-      /^hey$/i,
-      /^howdy$/i,
-      /^greetings$/i,
-      /^hi there$/i,
-      /^hello there$/i,
-      /^good morning$/i,
-      /^good afternoon$/i,
-      /^good evening$/i
+      /^hi\b/i,
+      /^hello\b/i,
+      /^hey\b/i,
+      /^hellow\b/i,
+      /^greetings\b/i,
+      /^hi there\b/i,
+      /^hello there\b/i,
+      /^good morning\b/i,
+      /^good afternoon\b/i,
+      /^good evening\b/i
     ];
     
     return greetingPatterns.some(pattern => pattern.test(message.trim()));
@@ -369,14 +376,16 @@ const ChatAssistantButton = () => {
           type: 'bot', 
           text: 'Analyzing website content... This might take longer for the first request as I create embeddings.',
           isStreaming: true,
-          loadingIndicator: true
+          loadingIndicator: true,
+          suggestedQuestions: []
         }]);
       } else {
         setChatHistory(prev => [...prev, { 
           type: 'bot', 
           text: '', 
           isStreaming: true,
-          loadingIndicator: true
+          loadingIndicator: true,
+          suggestedQuestions: []
         }]);
       }
       
@@ -389,7 +398,8 @@ const ChatAssistantButton = () => {
             type: 'bot', 
             text: `## Error\n\nUser email information is missing. Please sign out and sign in again.`,
             isStreaming: false,
-            loadingIndicator: false
+            loadingIndicator: false,
+            suggestedQuestions: []
           }
         ]);
         setChatIsLoading(false);
@@ -408,7 +418,8 @@ const ChatAssistantButton = () => {
             type: 'bot', 
             text: greetingResponse,
             isStreaming: true,
-            loadingIndicator: false
+            loadingIndicator: false,
+            suggestedQuestions: []
           }
         ]);
         
@@ -436,6 +447,40 @@ const ChatAssistantButton = () => {
       if (websiteMode && activeWebsiteUrl) {
         // For website mode, use the chat-with-website endpoint
         response = await api.chatWithWebsite(userEmail, activeWebsiteUrl, trimmedMessage);
+        
+        // If response is successful, save the URL to localStorage for this user
+        if (response.success) {
+          // Add to available URLs if not already there
+          if (!availableWebsiteUrls.includes(activeWebsiteUrl)) {
+            addWebsiteUrlToAvailable(activeWebsiteUrl);
+          }
+        } else {
+          // If response failed, check for embedding failures
+          if (response.error && 
+            (response.error.includes("failed") || 
+             response.error.includes("unavailable") || 
+             response.error.includes("incorrect"))) {
+            
+            // Remove the failed website from available URLs
+            console.log(`Removing failed website URL: ${activeWebsiteUrl}`);
+            
+            // Only do this after the error message is displayed to the user
+            setTimeout(() => {
+              if (activeWebsiteUrl) {
+                removeWebsiteUrl(activeWebsiteUrl);
+                
+                // Notify user about the removal in a separate message
+                setChatHistory(prev => [...prev, {
+                  type: 'bot',
+                  text: `I've removed "${activeWebsiteUrl}" from your websites list as it couldn't be processed. This can happen if the website is too large or has formatting that prevents proper embedding.`,
+                  isStreaming: false,
+                  loadingIndicator: false,
+                  suggestedQuestions: []
+                }]);
+              }
+            }, 1000);
+          }
+        }
       } else {
         // For regular and CSV mode, use the standard sendMessage function
         response = await api.sendMessage(trimmedMessage, userEmail, csvMode, activeCSVFile);
@@ -477,7 +522,8 @@ const ChatAssistantButton = () => {
             type: 'bot', 
             text: `## Error\n\nSorry, I encountered an error while processing your request.\n\n**Details:** ${response.error || 'Unknown error'}\n\nPlease try again later or contact support with this error message.`,
             isStreaming: false,
-            loadingIndicator: false
+            loadingIndicator: false,
+            suggestedQuestions: []
           }
         ]);
       }
@@ -496,7 +542,8 @@ const ChatAssistantButton = () => {
           type: 'bot', 
           text: `## Error\n\nAn unexpected error occurred.\n\n**Details:** ${errorMessage}\n\nPlease try again later or contact support with this error message.`,
           isStreaming: false,
-          loadingIndicator: false
+          loadingIndicator: false,
+          suggestedQuestions: []
         }
       ]);
     } finally {
@@ -530,6 +577,10 @@ const ChatAssistantButton = () => {
   const chatWindowDesktopBase = "bottom-4 right-4 w-[400px] h-[600px] max-w-[95vw] max-h-[90vh]";
   const chatWindowDesktopMaximized = "bottom-4 right-4 left-4 top-4 w-auto h-auto max-w-none max-h-none rounded-lg";
   const chatWindowDesktopClasses = isMaximized ? chatWindowDesktopMaximized : chatWindowDesktopBase;
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
   return (
     <>
@@ -572,7 +623,12 @@ const ChatAssistantButton = () => {
             
             <CardContent className="flex-1 overflow-y-auto p-4 scrollbar-stable" ref={chatBodyRef}>
               {chatHistory.length === 0 ? (
-                <WelcomeScreen />
+                <WelcomeScreen 
+                  isMobile={isMobile}
+                  triggerFileUpload={triggerFileUpload}
+                  toggleKnowledgeBase={toggleKnowledgeBase}
+                  setChatHistory={setChatHistory}
+                />
               ) : (
                 chatHistory.map((msg, index) => (
                   <ChatMessage
@@ -620,8 +676,11 @@ const ChatAssistantButton = () => {
                 handleSelectCsvFile={handleSelectCsvFile}
                 handleSelectWebsite={handleSelectWebsite}
                 addWebsiteUrlToAvailable={addWebsiteUrlToAvailable}
+                removeWebsiteUrl={removeWebsiteUrl}
                 inputRef={inputRef}
                 isFullscreen={isMaximized}
+                isAuthenticated={isAuthenticated}
+                userEmail={userEmail || ''}
               />
             </CardFooter>
           </motion.div>

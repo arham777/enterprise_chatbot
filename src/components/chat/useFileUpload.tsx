@@ -32,7 +32,8 @@ export const useFileUpload = ({
     if (!userEmail) {
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: 'Error: User email information is missing. Please sign out and sign in again.'
+        text: 'Error: User email information is missing. Please sign out and sign in again.',
+        suggestedQuestions: []
       }]);
       return;
     }
@@ -44,7 +45,8 @@ export const useFileUpload = ({
     if (!isPDF && !isCSV) {
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: 'Only PDF and CSV files are supported for document upload. Please upload a PDF or CSV file.'
+        text: 'Only PDF and CSV files are supported for document upload. Please upload a PDF or CSV file.',
+        suggestedQuestions: []
       }]);
       return;
     }
@@ -56,7 +58,8 @@ export const useFileUpload = ({
     if (file.size > maxSizeBytes) {
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: `File too large. Maximum ${isPDF ? 'PDF' : 'CSV'} size is ${maxSizeMB}MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`
+        text: `File too large. Maximum ${isPDF ? 'PDF' : 'CSV'} size is ${maxSizeMB}MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`,
+        suggestedQuestions: []
       }]);
       // Reset the file input
       if (fileInputRef.current) {
@@ -74,7 +77,8 @@ export const useFileUpload = ({
       if (!isPDFFormat) {
         setChatHistory(prev => [...prev, { 
           type: 'bot', 
-          text: `The file ${file.name} doesn't appear to be a valid PDF document. Make sure your file is not corrupted.`
+          text: `The file ${file.name} doesn't appear to be a valid PDF document. Make sure your file is not corrupted.`,
+          suggestedQuestions: []
         }]);
         return;
       }
@@ -162,7 +166,8 @@ export const useFileUpload = ({
             filename: file.name,
             fileType: isPDF ? 'PDF' : 'CSV',
           },
-          sourceDocument: response.data?.source_document
+          sourceDocument: response.data?.source_document,
+          suggestedQuestions: []
         }]);
         
         // Set active file ID for CSV files
@@ -176,7 +181,8 @@ export const useFileUpload = ({
         const errorDetail = response.error || 'Unknown error occurred during file upload';
         setChatHistory(prev => [...prev, { 
           type: 'bot', 
-          text: `## Error\n\nI encountered an error while processing your file.\n\n**Details:** ${errorDetail}`
+          text: `## Error\n\nI encountered an error while processing your file.\n\n**Details:** ${errorDetail}`,
+          suggestedQuestions: []
         }]);
       }
     } catch (error) {
@@ -184,7 +190,8 @@ export const useFileUpload = ({
       console.error('Unexpected error in file upload:', error);
       setChatHistory(prev => [...prev, { 
         type: 'bot', 
-        text: `## Error\n\nAn unexpected error occurred while uploading your file.\n\n**Details:** ${error instanceof Error ? error.message : String(error)}`
+        text: `## Error\n\nAn unexpected error occurred while uploading your file.\n\n**Details:** ${error instanceof Error ? error.message : String(error)}`,
+        suggestedQuestions: []
       }]);
     } finally {
       setIsLoading(false);
