@@ -105,6 +105,7 @@ export const convertHistoryToChatMessages = (history: any[]) => {
         chatMessages.push({
           type: 'bot',
           text: history[i + 1].content,
+          suggestedQuestions: []
           // Add any additional properties if available in the data
         });
         i++; // Skip the assistant message we just processed
@@ -410,4 +411,227 @@ export const sendMessage = async (message: string, userEmail: string, csvMode: b
       error: error instanceof Error ? error.message : String(error)
     };
   }
+};
+
+// Function to chat with a website
+export const chatWithWebsite = async (email: string, url: string, prompt: string) => {
+  if (!email || !url || !prompt) {
+    return {
+      success: false,
+      error: 'Missing required parameters: email, url, or prompt'
+    };
+  }
+
+  try {
+    // Call the chat with website endpoint
+    const chatWebsiteEndpoint = `${ORIGINAL_API_URL}/chat-with-website/`;
+    
+    console.log(`Sending request to chat with website: ${url}`);
+    
+    // Keep this for backwards compatibility but don't use it
+    const embeddingsCreated = false;
+    
+    // Try multiple approaches with different parameter names
+    
+    // Approach 1: FormData with email/url/prompt
+    try {
+      console.log('Trying FormData with email/url/prompt');
+      const formData = new FormData();
+      formData.append('email', email);
+      formData.append('url', url);
+      formData.append('prompt', prompt);
+      
+      const response = await fetch(chatWebsiteEndpoint, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        headers: {
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Approach 1 succeeded:', data);
+        return {
+          success: true,
+          responseText: data.response || 'No response received',
+          sourceUrl: url,
+          suggestedQuestions: data.suggested_questions || []
+        };
+      } else {
+        console.log(`Approach 1 failed (${response.status})`);
+      }
+    } catch (error) {
+      console.error('Approach 1 error:', error);
+    }
+    
+    // Approach 2: FormData with alternate parameter names
+    try {
+      console.log('Trying FormData with email/website/query');
+      const formData = new FormData();
+      formData.append('email', email);
+      formData.append('website', url);  // Try different parameter name
+      formData.append('query', prompt);  // Try different parameter name
+      
+      const response = await fetch(chatWebsiteEndpoint, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        headers: {
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Approach 2 succeeded:', data);
+        return {
+          success: true,
+          responseText: data.response || 'No response received',
+          sourceUrl: url,
+          suggestedQuestions: data.suggested_questions || []
+        };
+      } else {
+        console.log(`Approach 2 failed (${response.status})`);
+      }
+    } catch (error) {
+      console.error('Approach 2 error:', error);
+    }
+    
+    // Approach 3: JSON with email/url/prompt
+    try {
+      console.log('Trying JSON with email/url/prompt');
+      const response = await fetch(chatWebsiteEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+        },
+        body: JSON.stringify({
+          email: email,
+          url: url,
+          prompt: prompt
+        }),
+        mode: 'cors'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Approach 3 succeeded:', data);
+        return {
+          success: true,
+          responseText: data.response || 'No response received',
+          sourceUrl: url,
+          suggestedQuestions: data.suggested_questions || []
+        };
+      } else {
+        console.log(`Approach 3 failed (${response.status})`);
+      }
+    } catch (error) {
+      console.error('Approach 3 error:', error);
+    }
+    
+    // Approach 4: JSON with alternate parameter names
+    try {
+      console.log('Trying JSON with email/website/query');
+      const response = await fetch(chatWebsiteEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+        },
+        body: JSON.stringify({
+          email: email,
+          website: url,  // Try different parameter name
+          query: prompt  // Try different parameter name
+        }),
+        mode: 'cors'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Approach 4 succeeded:', data);
+        return {
+          success: true,
+          responseText: data.response || 'No response received',
+          sourceUrl: url,
+          suggestedQuestions: data.suggested_questions || []
+        };
+      } else {
+        console.log(`Approach 4 failed (${response.status})`);
+      }
+    } catch (error) {
+      console.error('Approach 4 error:', error);
+    }
+    
+    // All approaches failed
+    throw new Error("All attempts to chat with website failed. The API might be temporarily unavailable or the URL format might be incorrect.");
+  } catch (error) {
+    console.error('Error in chat with website:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+};
+
+// Function to get list of embedded website URLs for a specific user - No longer used
+// Keeping this code commented out for reference
+/*
+export const getEmbeddedWebsiteUrls = async (userEmail: string) => {
+  if (!userEmail) {
+    return {
+      success: false,
+      error: 'Missing required parameter: email'
+    };
+  }
+
+  try {
+    // Use the same endpoint but with a special flag to get embedded URLs
+    const chatWebsiteEndpoint = `${ORIGINAL_API_URL}/chat-with-website/`;
+    
+    console.log(`Fetching embedded website URLs for user: ${userEmail}`);
+    
+    // Send request to get embedded URLs
+    const formData = new FormData();
+    formData.append('email', userEmail);
+    formData.append('get_embedded_urls', 'true');
+    
+    const response = await fetch(chatWebsiteEndpoint, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      headers: {
+        'Accept': 'application/json',
+        'Origin': window.location.origin,
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Retrieved embedded website URLs:', data);
+      return {
+        success: true,
+        embeddedUrls: data.embedded_urls || []
+      };
+    } else {
+      console.error(`Failed to fetch embedded URLs (${response.status})`);
+      return {
+        success: false,
+        error: `Failed to fetch embedded URLs (${response.status})`
+      };
+    }
+  } catch (error) {
+    console.error('Error fetching embedded website URLs:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 }; 
+*/ 

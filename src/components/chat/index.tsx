@@ -46,11 +46,13 @@ const ChatAssistantButton = () => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [message, setMessage] = useState('');
   const [showCsvDropdown, setShowCsvDropdown] = useState(false);
+  const [showWebsiteModal, setShowWebsiteModal] = useState(false);
   
   // Refs
   const inputRef = useRef<HTMLInputElement>(null);
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const csvDropdownRef = useRef<HTMLDivElement>(null);
+  const websiteModalRef = useRef<HTMLDivElement>(null);
   
   // Auth context
   const { isAuthenticated, redirectToLogin, userEmail, userName } = useAuth();
@@ -64,10 +66,16 @@ const ChatAssistantButton = () => {
     setUseKnowledgeBase,
     csvMode,
     setCsvMode,
+    websiteMode,
+    setWebsiteMode,
     activeCSVFile,
     setActiveCSVFile,
+    activeWebsiteUrl,
+    setActiveWebsiteUrl,
     availableCSVFiles,
     setAvailableCSVFiles,
+    availableWebsiteUrls,
+    setAvailableWebsiteUrls,
     chatHistory,
     setChatHistory,
     isLoading: chatIsLoading,
@@ -78,10 +86,15 @@ const ChatAssistantButton = () => {
     setActiveFileId,
     toggleKnowledgeBase,
     toggleCsvMode,
+    toggleWebsiteMode,
     resetChat,
     addCsvFileToAvailable,
     handleSelectCsvFile,
     clearCsvFilesList,
+    addWebsiteUrlToAvailable,
+    handleSelectWebsite,
+    clearWebsiteUrlsList,
+    removeWebsiteUrl,
     isResetting
   } = useChatState(userEmail, isAuthenticated);
 
@@ -191,6 +204,20 @@ const ChatAssistantButton = () => {
     };
   }, []);
 
+  // Add event listener for clicking outside the Website modal
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (websiteModalRef.current && !websiteModalRef.current.contains(event.target as Node)) {
+        setShowWebsiteModal(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Add event listener for suggested question clicks
   useEffect(() => {
     const handleSuggestedQuestionClick = (event: CustomEvent) => {
@@ -211,15 +238,19 @@ const ChatAssistantButton = () => {
         // For PDF files, activate knowledge base
         setUseKnowledgeBase(true);
         setCsvMode(false);
+        setWebsiteMode(false);
         localStorage.setItem('useKnowledgeBase', 'true');
         localStorage.setItem('csvMode', 'false');
+        localStorage.setItem('websiteMode', 'false');
       } else if (isCSV) {
         // For CSV files, activate CSV mode
         setUseKnowledgeBase(false);
         setCsvMode(true);
+        setWebsiteMode(false);
         setActiveCSVFile(fileName);
         localStorage.setItem('useKnowledgeBase', 'false');
         localStorage.setItem('csvMode', 'true');
+        localStorage.setItem('websiteMode', 'false');
         localStorage.setItem('activeCSVFile', fileName);
         
         // Add to available CSV files list
@@ -233,20 +264,26 @@ const ChatAssistantButton = () => {
       }`;
       
       // Add the message to chat history
-      setChatHistory(prev => [...prev, { 
-        type: 'user', 
-        text: `I'd like to analyze this ${isPDF ? 'PDF document' : 'CSV file'}: ${fileName}`
-      }]);
+      setChatHistory(prev => [
+        ...prev,
+        {
+          type: 'user',
+          text: `I'd like to analyze this ${isPDF ? 'PDF document' : 'CSV file'}: ${fileName}`
+        }
+      ]);
       
       // Add the success response message
-      setChatHistory(prev => [...prev, { 
-        type: 'bot',
-        text: successMessage,
-        fileInfo: {
-          filename: fileName,
-          fileType: isPDF ? 'PDF' : 'CSV',
+      setChatHistory(prev => [
+        ...prev,
+        {
+          type: 'bot',
+          text: successMessage,
+          fileInfo: {
+            filename: fileName,
+            fileType: isPDF ? 'PDF' : 'CSV',
+          }
         }
-      }]);
+      ]);
       
       // Set active file ID for CSV files
       if (isCSV) {
@@ -281,16 +318,16 @@ const ChatAssistantButton = () => {
   // Function to check if a message is a greeting
   const isGreeting = (message: string): boolean => {
     const greetingPatterns = [
-      /^hi$/i,
-      /^hello$/i,
-      /^hey$/i,
-      /^howdy$/i,
-      /^greetings$/i,
-      /^hi there$/i,
-      /^hello there$/i,
-      /^good morning$/i,
-      /^good afternoon$/i,
-      /^good evening$/i
+      /^hi\b/i,
+      /^hello\b/i,
+      /^hey\b/i,
+      /^hellow\b/i,
+      /^greetings\b/i,
+      /^hi there\b/i,
+      /^hello there\b/i,
+      /^good morning\b/i,
+      /^good afternoon\b/i,
+      /^good evening\b/i
     ];
     
     return greetingPatterns.some(pattern => pattern.test(message.trim()));
@@ -332,12 +369,25 @@ const ChatAssistantButton = () => {
 
       // Add a placeholder for the bot's response with isStreaming=true
       const placeholderIndex = chatHistory.length + 1;
-      setChatHistory(prev => [...prev, { 
-        type: 'bot', 
-        text: '', 
-        isStreaming: true,
-        loadingIndicator: true
-      }]);
+      
+      // For website mode, add a special message about embeddings
+      if (websiteMode && activeWebsiteUrl) {
+        setChatHistory(prev => [...prev, { 
+          type: 'bot', 
+          text: 'Analyzing website content... This might take longer for the first request as I create embeddings.',
+          isStreaming: true,
+          loadingIndicator: true,
+          suggestedQuestions: []
+        }]);
+      } else {
+        setChatHistory(prev => [...prev, { 
+          type: 'bot', 
+          text: '', 
+          isStreaming: true,
+          loadingIndicator: true,
+          suggestedQuestions: []
+        }]);
+      }
       
       // Check if we have the user email
       if (!userEmail) {
@@ -348,7 +398,8 @@ const ChatAssistantButton = () => {
             type: 'bot', 
             text: `## Error\n\nUser email information is missing. Please sign out and sign in again.`,
             isStreaming: false,
-            loadingIndicator: false
+            loadingIndicator: false,
+            suggestedQuestions: []
           }
         ]);
         setChatIsLoading(false);
@@ -367,7 +418,8 @@ const ChatAssistantButton = () => {
             type: 'bot', 
             text: greetingResponse,
             isStreaming: true,
-            loadingIndicator: false
+            loadingIndicator: false,
+            suggestedQuestions: []
           }
         ]);
         
@@ -386,8 +438,53 @@ const ChatAssistantButton = () => {
         return;
       }
 
-      // Use the API service to send the message
-      const response = await sendMessage(trimmedMessage, userEmail, csvMode, activeCSVFile);
+      let response;
+      
+      // Import API functions
+      const api = await import('./api');
+      
+      // Use different endpoints based on mode
+      if (websiteMode && activeWebsiteUrl) {
+        // For website mode, use the chat-with-website endpoint
+        response = await api.chatWithWebsite(userEmail, activeWebsiteUrl, trimmedMessage);
+        
+        // If response is successful, save the URL to localStorage for this user
+        if (response.success) {
+          // Add to available URLs if not already there
+          if (!availableWebsiteUrls.includes(activeWebsiteUrl)) {
+            addWebsiteUrlToAvailable(activeWebsiteUrl);
+          }
+        } else {
+          // If response failed, check for embedding failures
+          if (response.error && 
+            (response.error.includes("failed") || 
+             response.error.includes("unavailable") || 
+             response.error.includes("incorrect"))) {
+            
+            // Remove the failed website from available URLs
+            console.log(`Removing failed website URL: ${activeWebsiteUrl}`);
+            
+            // Only do this after the error message is displayed to the user
+            setTimeout(() => {
+              if (activeWebsiteUrl) {
+                removeWebsiteUrl(activeWebsiteUrl);
+                
+                // Notify user about the removal in a separate message
+                setChatHistory(prev => [...prev, {
+                  type: 'bot',
+                  text: `I've removed "${activeWebsiteUrl}" from your websites list as it couldn't be processed. This can happen if the website is too large or has formatting that prevents proper embedding.`,
+                  isStreaming: false,
+                  loadingIndicator: false,
+                  suggestedQuestions: []
+                }]);
+              }
+            }, 1000);
+          }
+        }
+      } else {
+        // For regular and CSV mode, use the standard sendMessage function
+        response = await api.sendMessage(trimmedMessage, userEmail, csvMode, activeCSVFile);
+      }
       
       if (response.success) {
         // Update the chat history with the response
@@ -399,9 +496,11 @@ const ChatAssistantButton = () => {
             isStreaming: true,
             loadingIndicator: false,
             sourceDocument: response.sourceDocument,
+            sourceUrl: response.sourceUrl,
             suggestedQuestions: response.suggestedQuestions,
             visualization: response.visualization,
-            isCsvResponse: response.isCsvResponse
+            isCsvResponse: response.isCsvResponse,
+            isWebsiteResponse: websiteMode
           }
         ]);
         
@@ -423,42 +522,30 @@ const ChatAssistantButton = () => {
             type: 'bot', 
             text: `## Error\n\nSorry, I encountered an error while processing your request.\n\n**Details:** ${response.error || 'Unknown error'}\n\nPlease try again later or contact support with this error message.`,
             isStreaming: false,
-            loadingIndicator: false
+            loadingIndicator: false,
+            suggestedQuestions: []
           }
         ]);
       }
     } catch (error) {
-      console.error('Unhandled error in sendMessage:', error);
-      // This catch block handles any unexpected errors that might occur outside the API calls
-      setChatHistory(prev => {
-        // Find the last bot message index if it exists
-        const lastBotIndex = [...prev].reverse().findIndex(msg => msg.type === 'bot');
-        const placeholderIndex = lastBotIndex >= 0 ? prev.length - 1 - lastBotIndex : prev.length; 
-        
-        // Add error message or update existing bot message
-        if (lastBotIndex >= 0 && prev[placeholderIndex].loadingIndicator) {
-          return [
-            ...prev.slice(0, placeholderIndex),
-            { 
-              type: 'bot', 
-              text: `## Error\n\nAn unexpected error occurred.\n\n**Details:** ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`,
-              isStreaming: false,
-              loadingIndicator: false
-            },
-            ...prev.slice(placeholderIndex + 1)
-          ];
-        } else {
-          return [
-            ...prev,
-            { 
-              type: 'bot', 
-              text: `## Error\n\nAn unexpected error occurred.\n\n**Details:** ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`,
-              isStreaming: false,
-              loadingIndicator: false
-            }
-          ];
+      // Handle any unexpected errors
+      console.error('Error sending message:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Find the placeholder entry we added earlier
+      const placeholderIndex = chatHistory.length;
+      
+      // Update placeholder with error message
+      setChatHistory(prev => [
+        ...prev.slice(0, placeholderIndex),
+        { 
+          type: 'bot', 
+          text: `## Error\n\nAn unexpected error occurred.\n\n**Details:** ${errorMessage}\n\nPlease try again later or contact support with this error message.`,
+          isStreaming: false,
+          loadingIndicator: false,
+          suggestedQuestions: []
         }
-      });
+      ]);
     } finally {
       setChatIsLoading(false);
     }
@@ -491,6 +578,10 @@ const ChatAssistantButton = () => {
   const chatWindowDesktopMaximized = "bottom-4 right-4 left-4 top-4 w-auto h-auto max-w-none max-h-none rounded-lg";
   const chatWindowDesktopClasses = isMaximized ? chatWindowDesktopMaximized : chatWindowDesktopBase;
 
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
   return (
     <>
       {/* Add scrollbar styles */}
@@ -506,32 +597,32 @@ const ChatAssistantButton = () => {
       />
     
       {/* Chat Window */}
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {isOpen && (
           <motion.div
             key="chat-window"
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.98 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ ease: 'easeOut', duration: 0.2 }}
             className={cn(
-              chatWindowBaseClasses,
-              isMobile ? chatWindowMobileClasses : chatWindowDesktopClasses
+              "fixed bottom-16 right-4 z-50 flex flex-col w-[90vw] sm:w-[400px] max-h-[600px] overflow-hidden shadow-lg rounded-lg border border-border bg-card",
+              isMaximized && 'bottom-0 right-0 w-full sm:w-full max-h-screen h-[calc(100vh-50px)] rounded-none border-0'
             )}
-            style={{ transformOrigin: 'bottom right' }}
           >
-            {/* Header */}
-            <ChatHeader 
-              toggleChat={toggleChat}
-              toggleMaximize={toggleMaximize}
+            <ChatHeader
               isMaximized={isMaximized}
-              isMobile={isMobile}
+              toggleMaximize={toggleMaximize}
+              closeChat={() => setIsOpen(false)}
+              useKnowledgeBase={useKnowledgeBase}
+              csvMode={csvMode}
+              websiteMode={websiteMode}
+              activeCSVFile={activeCSVFile}
+              activeWebsiteUrl={activeWebsiteUrl}
             />
-
-            {/* Chat Body */}
-            <CardContent ref={chatBodyRef} className="flex-grow overflow-y-auto p-4 space-y-4 bg-muted/20 scrollbar-stable">
+            
+            <CardContent className="flex-1 overflow-y-auto p-4 scrollbar-stable" ref={chatBodyRef}>
               {chatHistory.length === 0 ? (
-                // Welcome Screen
                 <WelcomeScreen 
                   isMobile={isMobile}
                   triggerFileUpload={triggerFileUpload}
@@ -539,14 +630,23 @@ const ChatAssistantButton = () => {
                   setChatHistory={setChatHistory}
                 />
               ) : (
-                // Chat History
                 chatHistory.map((msg, index) => (
-                  <ChatMessage key={index} message={msg} />
+                  <ChatMessage
+                    key={index}
+                    message={msg}
+                    isLast={index === chatHistory.length - 1}
+                    onSuggestedQuestionClick={(question) => {
+                      setMessage(question);
+                      // Wait a bit then auto-send
+                      setTimeout(() => {
+                        handleSendMessage();
+                      }, 300);
+                    }}
+                  />
                 ))
               )}
             </CardContent>
-
-            {/* Footer / Input Area */}
+            
             <CardFooter className="p-3 border-t bg-card flex-shrink-0">
               <MessageInput 
                 onSendMessage={handleSendMessage}
@@ -554,19 +654,33 @@ const ChatAssistantButton = () => {
                 triggerFileUpload={triggerFileUpload}
                 toggleKnowledgeBase={toggleKnowledgeBase}
                 toggleCsvMode={toggleCsvMode}
+                toggleWebsiteMode={toggleWebsiteMode}
                 message={message}
                 setMessage={setMessage}
                 isLoading={isLoading}
                 useKnowledgeBase={useKnowledgeBase}
                 csvMode={csvMode}
+                websiteMode={websiteMode}
                 activeCSVFile={activeCSVFile}
+                activeWebsiteUrl={activeWebsiteUrl}
+                setActiveWebsiteUrl={setActiveWebsiteUrl}
                 chatHistoryLength={chatHistory.length}
                 showCsvDropdown={showCsvDropdown}
                 setShowCsvDropdown={setShowCsvDropdown}
+                showWebsiteModal={showWebsiteModal}
+                setShowWebsiteModal={setShowWebsiteModal}
+                websiteModalRef={websiteModalRef}
                 csvDropdownRef={csvDropdownRef}
                 availableCSVFiles={availableCSVFiles}
+                availableWebsiteUrls={availableWebsiteUrls}
                 handleSelectCsvFile={handleSelectCsvFile}
+                handleSelectWebsite={handleSelectWebsite}
+                addWebsiteUrlToAvailable={addWebsiteUrlToAvailable}
+                removeWebsiteUrl={removeWebsiteUrl}
                 inputRef={inputRef}
+                isFullscreen={isMaximized}
+                isAuthenticated={isAuthenticated}
+                userEmail={userEmail || ''}
               />
             </CardFooter>
           </motion.div>

@@ -46,7 +46,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             await toggleKnowledgeBase();
             setChatHistory(prev => [...prev, { 
               type: 'bot', 
-              text: 'Knowledge Base has been activated. You can now ask questions about your uploaded documents. If you haven\'t uploaded any documents yet, you can do so using the paper clip icon in the chat input area.' 
+              text: 'Knowledge Base has been activated. You can now ask questions about your uploaded documents. If you haven\'t uploaded any documents yet, you can do so using the paper clip icon in the chat input area.',
+              suggestedQuestions: []
             }]);
           }} 
         />

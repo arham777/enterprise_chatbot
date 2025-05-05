@@ -6,11 +6,24 @@ import { FormattedMarkdown } from './FormattedMarkdown';
 import { StreamingText } from './StreamingText';
 import { ChatMessageType } from './types';
 
-export const ChatMessage = ({ message }: { message: ChatMessageType }) => {
+interface ChatMessageProps {
+  message: ChatMessageType;
+  isLast?: boolean;
+  onSuggestedQuestionClick?: (question: string) => void;
+}
+
+export const ChatMessage: React.FC<ChatMessageProps> = ({ 
+  message, 
+  isLast = false,
+  onSuggestedQuestionClick 
+}) => {
   const isUser = message.type === 'user';
   const [showSuggestedQuestions, setShowSuggestedQuestions] = useState(true);
+  
   // Check if this is a CSV-related message
   const isCsvResponse = message.fileInfo?.fileType === 'CSV' || message.isCsvResponse;
+  // Check if this is a website-related message
+  const isWebsiteResponse = message.isWebsiteResponse;
   
   // Split multiple visualizations if they exist
   const visualizations = message.visualization 
@@ -19,14 +32,18 @@ export const ChatMessage = ({ message }: { message: ChatMessageType }) => {
 
   // Handle clicking a suggested question
   const handleSuggestedQuestionClick = (question: string) => {
-    // Dispatch a custom event that the parent component (ChatAssistantButton) can listen for
-    window.dispatchEvent(new CustomEvent('suggested-question-click', { 
-      detail: { question }
-    }));
+    if (onSuggestedQuestionClick) {
+      onSuggestedQuestionClick(question);
+    } else {
+      // Fallback to the event dispatch method
+      window.dispatchEvent(new CustomEvent('suggested-question-click', { 
+        detail: { question }
+      }));
+    }
   };
     
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start', 'mb-4')}>
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -77,7 +94,7 @@ export const ChatMessage = ({ message }: { message: ChatMessageType }) => {
           )}
 
           {/* Source document info for bot messages */}
-          {!isUser && !message.isStreaming && !message.loadingIndicator && (
+          {!isUser && !message.loadingIndicator && !message.isStreaming && (
             <div className="flex items-center gap-2 p-2 bg-secondary/30 rounded mt-3">
               {!message.sourceDocument || message.sourceDocument === "N/A" ? (
                 <>
@@ -88,12 +105,28 @@ export const ChatMessage = ({ message }: { message: ChatMessageType }) => {
                         <p className="text-xs text-muted-foreground">CSV search</p>
                       </div>
                     </>
+                  ) : isWebsiteResponse && message.sourceUrl ? (
+                    <>
+                      <Globe className="h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Website: {(() => {
+                            try {
+                              const url = new URL(message.sourceUrl);
+                              return url.hostname;
+                            } catch {
+                              return message.sourceUrl;
+                            }
+                          })()}
+                        </p>
+                      </div>
+                    </>
                   ) : (
-                <>
-                  <Globe className="h-4 w-4 text-primary" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">web search</p>
-                  </div>
+                    <>
+                      <Globe className="h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">web search</p>
+                      </div>
                     </>
                   )}
                 </>
@@ -109,7 +142,7 @@ export const ChatMessage = ({ message }: { message: ChatMessageType }) => {
           )}
 
           {/* Suggested questions */}
-          {!isUser && !message.isStreaming && !message.loadingIndicator && message.suggestedQuestions && Array.isArray(message.suggestedQuestions) && message.suggestedQuestions.length > 0 && showSuggestedQuestions && (
+          {!isUser && !message.loadingIndicator && !message.isStreaming && message.suggestedQuestions && message.suggestedQuestions.length > 0 && showSuggestedQuestions && (
             <div className="mt-4 pt-3 border-t border-border">
               <div className="flex justify-between items-center mb-2">
                 <p className="text-xs font-medium text-muted-foreground">Suggested questions</p>
@@ -139,49 +172,23 @@ export const ChatMessage = ({ message }: { message: ChatMessageType }) => {
                     >
                       {question}
                     </button>
-                ))}
+                  ))}
               </div>
             </div>
           )}
           
           {/* Visualizations if available */}
-          {visualizations.length > 0 && (
-            <div className="mt-3 rounded-md overflow-hidden border border-border bg-card p-3">
-              <h4 className="text-sm font-medium mb-2">Data Visualization</h4>
-              
-              {visualizations.length === 1 ? (
-                // Single visualization
-                <div className="visualization-container">
-                  <a href={visualizations[0]} target="_blank" rel="noopener noreferrer">
-                    <img 
-                      src={visualizations[0]} 
-                      alt="Data visualization" 
-                      className="w-full object-contain max-h-[400px] rounded hover:opacity-90 transition-opacity"
-                    />
-                  </a>
+          {!isUser && visualizations.length > 0 && (
+            <div className="mt-4 space-y-3">
+              {visualizations.map((visUrl, index) => (
+                <div key={index} className="flex justify-center">
+                  <img 
+                    src={visUrl} 
+                    alt={`Visualization ${index + 1}`}
+                    className="max-w-full rounded border border-border"
+                  />
                 </div>
-              ) : (
-                // Multiple visualizations
-                <div className={`grid ${visualizations.length === 2 ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'} gap-4`}>
-                  {visualizations.map((viz, index) => (
-                    <div key={index} className="border border-border rounded-md p-2 visualization-item">
-                      <a href={viz} target="_blank" rel="noopener noreferrer">
-                        <img 
-                          src={viz} 
-                          alt={`Visualization ${index + 1}`} 
-                          className="w-full object-contain max-h-[300px] rounded hover:opacity-90 transition-opacity"
-                        />
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          
-          {(message.inputCost !== undefined || message.outputCost !== undefined) && (
-            <div className="text-right text-xs text-muted-foreground mt-2">
-              Cost: ${((Number(message.inputCost) || 0) + (Number(message.outputCost) || 0)).toFixed(4)}
+              ))}
             </div>
           )}
         </div>
