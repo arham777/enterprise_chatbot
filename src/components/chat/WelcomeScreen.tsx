@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, FileText, Database, Table } from 'lucide-react';
+import { Bot, FileText, Database, Table, Globe } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { WelcomeCard } from './WelcomeCard';
 
@@ -57,6 +57,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           title="CSV Data" 
           description="Upload & query CSV files." 
           onClick={triggerFileUpload}
+        />
+        
+        <WelcomeCard 
+          icon={Globe} 
+          title="Website Search" 
+          description="Chat with your websites." 
         />
       </div>
     </motion.div>
