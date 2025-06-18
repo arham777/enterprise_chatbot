@@ -606,7 +606,7 @@ const ChatAssistantButton = () => {
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ ease: 'easeOut', duration: 0.2 }}
             className={cn(
-              "fixed bottom-4 right-4 z-50 flex flex-col w-[90vw] sm:w-[400px] max-h-[600px] overflow-hidden shadow-lg rounded-lg border border-border bg-card",
+              "fixed bottom-4 right-4 z-50 flex flex-col w-[90vw] sm:w-[400px] max-h-[600px] min-h-[600px] overflow-hidden shadow-lg rounded-lg border border-border bg-card",
               isMaximized ? 'bottom-0 left-2 right-2 w-[calc(100%-16px)] sm:w-[calc(100%-16px)] max-h-screen h-[calc(100vh-20px)] rounded-none border-0' : ''
             )}
           >
@@ -621,7 +621,7 @@ const ChatAssistantButton = () => {
               activeWebsiteUrl={activeWebsiteUrl}
             />
             
-            <CardContent className="flex-1 overflow-y-auto p-4 scrollbar-stable" ref={chatBodyRef}>
+            <CardContent className="flex-1 overflow-y-auto p-4 scrollbar-stable " ref={chatBodyRef}>
               {chatHistory.length === 0 ? (
                 <WelcomeScreen 
                   isMobile={isMobile}

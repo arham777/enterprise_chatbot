@@ -2,12 +2,13 @@ import React from 'react';
 import { Bot, FileText, Database, Table, Globe } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { WelcomeCard } from './WelcomeCard';
+import { ChatMessageType } from './types';
 
 interface WelcomeScreenProps {
   isMobile: boolean;
   triggerFileUpload: () => void;
   toggleKnowledgeBase: () => Promise<void>;
-  setChatHistory: React.Dispatch<React.SetStateAction<any[]>>;
+  setChatHistory: React.Dispatch<React.SetStateAction<ChatMessageType[]>>;
 }
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({

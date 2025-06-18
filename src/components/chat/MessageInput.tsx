@@ -528,7 +528,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       {showCsvDropdown && (
         <div
           ref={csvDropdownRef}
-          className="absolute bottom-24 left-16 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-48"
+          className={`absolute ${isFullscreen ? 'bottom-28' : 'bottom-24'} left-1/2 transform -translate-x-1/2 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-48`}
         >
           <div className="text-sm font-medium mb-2">Available CSV Files</div>
           {isFetchingCsvFiles ? (
@@ -578,7 +578,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       {showWebsiteDropdown && (
         <div
           ref={websiteDropdownRef}
-          className="absolute bottom-24 left-16 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-72"
+          className={`absolute ${isFullscreen ? 'bottom-28' : 'bottom-24'} left-1/2 transform -translate-x-1/2 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-72`}
         >
           <div className="text-sm font-medium mb-2">Available Websites</div>
           {availableWebsiteUrls.length === 0 ? (
@@ -656,7 +656,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       {showWebsiteModal && (
         <div
           ref={websiteModalRef}
-          className="absolute bottom-24 left-16 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-72"
+          className={`absolute ${isFullscreen ? 'bottom-28' : 'bottom-24'} left-1/2 transform -translate-x-1/2 bg-background border border-border rounded-md shadow-lg p-2 z-50 w-72`}
         >
           <div className="text-sm font-medium mb-2">Search from Website</div>
           <div className="space-y-2">
